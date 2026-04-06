@@ -1,0 +1,1 @@
+export { EnrichmentTable } from './EnrichmentTable'
