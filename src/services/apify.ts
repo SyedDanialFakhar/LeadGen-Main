@@ -1,42 +1,34 @@
 // src/services/apify.ts
-// Triggers Seek job scraping via Apify REST API
-
 import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
 const APIFY_BASE = 'https://api.apify.com/v2'
 const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
 
-interface ApifyRunResponse {
-  data: {
-    id: string
-    status: string
-  }
-}
-
 export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
   const token = await getApifyToken()
   if (!token) throw new Error('Apify token not configured. Please add it in Settings.')
 
-  // Build input with correct parameter names and values
   const input: any = {
     searchTerm: config.roleQuery,
-    maxResults: 100,
-    sortBy: 'ListedDate', // Changed from 'date' to 'ListedDate' (must be exactly this)
+    maxResults: config.maxResults || 20, // This should limit results
+    sortBy: 'ListedDate',
   }
   
-  // Only add location if it's not 'Australia' (meaning search all of Australia)
+  // Add offset for pagination
+  if (config.offset && config.offset > 0) {
+    input.offset = config.offset
+  }
+  
+  // Only add location if not 'Australia'
   if (config.city && config.city !== 'Australia') {
     input.location = config.city
   }
   
-  // Add date range if specified (must be a number)
-  if (config.minAgeDays && config.minAgeDays > 0 && config.minAgeDays <= 30) {
+  // Add date range if needed
+  if (config.minAgeDays && config.minAgeDays > 0) {
     input.dateRange = config.minAgeDays
   }
-  
-  // Add includeOneInTitle for better matching - this must be an array
-  input.includeOneInTitle = [config.roleQuery]
 
   console.log('Apify input:', JSON.stringify(input, null, 2))
 
@@ -58,21 +50,17 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     throw new Error(`Apify run failed: ${response.status} - ${errorText}`)
   }
 
-  const result: ApifyRunResponse = await response.json()
+  const result = await response.json()
   return result.data.id
 }
 
-export async function pollRunStatus(
-  runId: string
-): Promise<'running' | 'succeeded' | 'failed'> {
+export async function pollRunStatus(runId: string): Promise<'running' | 'succeeded' | 'failed'> {
   const token = await getApifyToken()
   if (!token) throw new Error('Apify token not configured')
 
   const response = await fetch(
     `${APIFY_BASE}/actor-runs/${runId}`,
-    {
-      headers: { 'Authorization': `Bearer ${token}` }
-    }
+    { headers: { 'Authorization': `Bearer ${token}` } }
   )
 
   if (!response.ok) {
@@ -87,7 +75,7 @@ export async function pollRunStatus(
   return 'running'
 }
 
-export async function fetchRunResults(runId: string): Promise<RawSeekJob[]> {
+export async function fetchRunResults(runId: string, limit?: number): Promise<RawSeekJob[]> {
   const token = await getApifyToken()
   if (!token) throw new Error('Apify token not configured')
 
@@ -107,8 +95,11 @@ export async function fetchRunResults(runId: string): Promise<RawSeekJob[]> {
     throw new Error('No dataset found for this run')
   }
 
+  // Limit the number of results returned
+  const limitParam = limit ? `&limit=${limit}` : ''
+  
   const response = await fetch(
-    `${APIFY_BASE}/datasets/${datasetId}/items?limit=1000`,
+    `${APIFY_BASE}/datasets/${datasetId}/items?format=json&limit=1000${limitParam}`,
     { headers: { 'Authorization': `Bearer ${token}` } }
   )
 
@@ -118,9 +109,9 @@ export async function fetchRunResults(runId: string): Promise<RawSeekJob[]> {
 
   const data = await response.json()
   
-  console.log(`Fetched ${data.length} items from dataset`)
-  if (data.length > 0) {
-    console.log('Sample item keys:', Object.keys(data[0]))
+  // If we have a limit, trim the results
+  if (limit && data.length > limit) {
+    return data.slice(0, limit)
   }
   
   return data
@@ -132,25 +123,15 @@ export async function waitForRun(
   timeoutMs = 120000
 ): Promise<'succeeded' | 'failed'> {
   const start = Date.now()
-  let lastStatus = ''
 
   while (Date.now() - start < timeoutMs) {
-    try {
-      const status = await pollRunStatus(runId)
-      
-      if (status !== lastStatus) {
-        onProgress?.(status)
-        lastStatus = status
-      }
+    const status = await pollRunStatus(runId)
+    onProgress?.(status)
 
-      if (status === 'succeeded') return 'succeeded'
-      if (status === 'failed') return 'failed'
+    if (status === 'succeeded') return 'succeeded'
+    if (status === 'failed') return 'failed'
 
-      await new Promise((res) => setTimeout(res, 3000))
-    } catch (err) {
-      console.error('Error polling status:', err)
-      await new Promise((res) => setTimeout(res, 3000))
-    }
+    await new Promise((res) => setTimeout(res, 3000))
   }
 
   throw new Error('Apify run timed out after 2 minutes')

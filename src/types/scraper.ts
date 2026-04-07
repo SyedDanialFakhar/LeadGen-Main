@@ -1,14 +1,13 @@
 // src/types/scraper.ts
 import type { City, Platform } from './lead'
 
-// src/types/scraper.ts - Add these fields to ScrapeConfig
 export interface ScrapeConfig {
   platform: Platform
   city: City
   roleQuery: string
   minAgeDays: number
-  maxResults?: number  // Add this
-  offset?: number      // Add this
+  maxResults?: number
+  offset?: number
 }
 
 export interface ScrapeRun {
@@ -26,33 +25,30 @@ export interface ScrapeRun {
   apifyRunId: string | null
 }
 
-// Updated RawSeekJob to match Apify's actual data structure
 export interface RawSeekJob {
   id: string
   title: string
+  roleId: string
   jobLink: string
   applyLink: string
   salary: string | null
   numApplicants: string | null
-  workArrangements: string | null
+  resumePercentage: number | null
+  coverLetterPercentage: number | null
   workTypes: string | null
+  workArrangements: string | null
   phoneNumbers: string[]
   emails: string[]
   listedAt: string
   expiresAtUtc: string
+  isExternalApply: boolean
+  isVerified: boolean
+  hasRoleRequirements: boolean
   content: {
     bulletPoints: string[]
     jobHook: string
     unEditedContent: string
     sections: string[]
-  }
-  advertiser: {
-    id: string
-    name: string
-    logo: string | null
-    isVerified: boolean
-    isPrivate: boolean
-    registrationDate: string
   }
   joblocationInfo: {
     area: string
@@ -65,6 +61,31 @@ export interface RawSeekJob {
   classificationInfo: {
     classification: string
     subClassification: string
+  }
+  employerQuestions: any[]
+  employerVideo: string | null
+  companyProfile: {
+    id: string
+    name: string
+    companyNameSlug: string
+    industry: string
+    size: string
+    profile: string
+    website: string
+    numberOfReviews: number
+    rating: number
+    overview: string
+    perksAndBenefits: string | null
+  }
+  companyOpenJobs: string
+  companyTags: string[]
+  advertiser: {
+    id: string
+    name: string
+    logo: string | null
+    isVerified: boolean
+    isPrivate: boolean
+    registrationDate: string
   }
   recruiterProfile?: {
     name: string
@@ -82,7 +103,7 @@ export interface RawSeekJob {
     specialisations: string[]
     placementCount: number
   }
-  // Fallback fields for compatibility
+  // Fallback fields
   location?: string
   company?: string
   companyName?: string
