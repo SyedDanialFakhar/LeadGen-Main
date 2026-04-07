@@ -1,5 +1,6 @@
 // src/hooks/useScraper.ts
 import { useState, useCallback } from 'react'
+import { MIN_AD_AGE_DAYS } from '@/utils/constants'
 import { runSeekScraper, waitForRun, fetchRunResults } from '@/services/apify'
 import { 
   extractEmails, 
@@ -37,14 +38,14 @@ export function useScraper() {
     
     for (const job of rawResults) {
       const description = job.content?.unEditedContent || ''
-      const companyName = job.advertiser?.name || ''
-      const datePosted = job.listedAt || ''
-      const jobUrl = job.jobLink || `https://www.seek.com.au/job/${job.id}`
+      const companyName = job.advertiser?.name || job.companyProfile?.name || ''
       
       // Apply filters
       if (isRecruitmentAgency(companyName, job.advertiser?.name)) continue
       if (hasUnwantedPhrases(description)) continue
       if (isPrivateAdvertiser(job.advertiser?.name)) continue
+      
+      const jobUrl = job.jobLink || `https://www.seek.com.au/job/${job.id}`
       
       // Skip duplicates
       if (jobsMap.has(jobUrl)) continue
@@ -62,34 +63,95 @@ export function useScraper() {
       
       // Format date
       let formattedDate = 'Recently posted'
-      if (datePosted) {
+      if (job.listedAt) {
         try {
-          const date = new Date(datePosted)
+          const date = new Date(job.listedAt)
           if (!isNaN(date.getTime())) {
-            formattedDate = date.toLocaleDateString('en-AU')
+            formattedDate = date.toLocaleDateString('en-AU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
           }
         } catch (e) {}
       }
       
-      // Get location
+      // Get location details
       let location = 'Location not specified'
+      let state = ''
+      let country = 'Australia'
+      
       if (job.joblocationInfo?.displayLocation) {
         location = job.joblocationInfo.displayLocation
+        const stateMatch = location.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)
+        if (stateMatch) state = stateMatch[1]
       } else if (job.joblocationInfo?.location) {
         location = job.joblocationInfo.location
       }
       
+      if (job.joblocationInfo?.country) {
+        country = job.joblocationInfo.country
+      }
+      
+      // Get company details
+      const companyId = job.companyProfile?.id || ''
+      const companyWebsite = job.companyProfile?.website || ''
+      const companyIndustry = job.companyProfile?.industry || ''
+      const companySize = job.companyProfile?.size || ''
+      const companyRating = job.companyProfile?.rating || 0
+      const companyOverview = job.companyProfile?.overview || ''
+      
+      // Get work details
+      const workType = job.workTypes || null
+      const workArrangement = job.workArrangements || null
+      
+      // Get classification
+      const classification = job.classificationInfo?.classification || ''
+      const subClassification = job.classificationInfo?.subClassification || ''
+      
+      // Get applicant count
+      const numApplicants = job.numApplicants || null
+      
+      // Get expiry date
+      let expiresAt = null
+      if (job.expiresAtUtc) {
+        try {
+          const expiryDate = new Date(job.expiresAtUtc)
+          if (!isNaN(expiryDate.getTime())) {
+            expiresAt = expiryDate.toLocaleDateString('en-AU')
+          }
+        } catch (e) {}
+      }
+      
       jobsMap.set(jobUrl, {
         id: `${job.id}`,
+        companyId: companyId,
         companyName: companyName,
+        companyWebsite: companyWebsite,
+        companyIndustry: companyIndustry,
+        companySize: companySize,
+        companyRating: companyRating,
+        companyOverview: companyOverview.substring(0, 500),
         jobTitle: job.title || 'Unknown Position',
+        jobLink: jobUrl,
+        applyLink: job.applyLink || '',
+        salary: job.salary || null,
         datePosted: formattedDate,
+        datePostedRaw: job.listedAt || '',
+        expiresAt: expiresAt,
         city: location,
-        jobAdUrl: jobUrl,
-        description: description.substring(0, 500),
+        state: state,
+        country: country,
+        workType: workType,
+        workArrangement: workArrangement,
+        numApplicants: numApplicants,
+        classification: classification,
+        subClassification: subClassification,
         emails: emails,
         phones: phones,
         contactName: contactName,
+        description: description.substring(0, 1000),
+        isVerified: job.isVerified || false,
         platform: 'seek',
       })
     }
@@ -140,7 +202,7 @@ export function useScraper() {
           platform: 'seek',
           city: city as City,
           roleQuery: jobTitle,
-          minAgeDays: 0,
+          minAgeDays: MIN_AD_AGE_DAYS,
           maxResults: maxResults,
           offset: offset,
         }
@@ -149,7 +211,12 @@ export function useScraper() {
           const apifyRunId = await runSeekScraper(config)
           const status = await waitForRun(apifyRunId)
           if (status === 'failed') return []
-          return await fetchRunResults(apifyRunId)
+          let rawResults = await fetchRunResults(apifyRunId)
+          // Ensure we don't exceed maxResults
+          if (rawResults.length > maxResults) {
+            rawResults = rawResults.slice(0, maxResults)
+          }
+          return rawResults
         } catch (err) {
           addLog(`  ❌ Error for "${jobTitle}"`)
           return []
@@ -179,8 +246,8 @@ export function useScraper() {
         
         addLog(`✨ Complete! Found ${processedJobs.length} valid jobs`)
       } else {
-        const existingUrls = new Set(jobs.map(j => j.jobAdUrl))
-        const newJobs = processedJobs.filter(j => !existingUrls.has(j.jobAdUrl))
+        const existingUrls = new Set(jobs.map(j => j.jobLink))
+        const newJobs = processedJobs.filter(j => !existingUrls.has(j.jobLink))
         setJobs(prev => [...prev, ...newJobs])
         setHasMore(processedJobs.length === maxResults * jobTitles.length)
         setCurrentOffset(offset + maxResults)

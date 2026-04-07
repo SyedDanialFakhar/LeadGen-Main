@@ -15,7 +15,6 @@ export type EnrichmentStatus =
 
 export type Platform = 'seek' | 'linkedin'
 
-// Change City from specific union type to string for any city
 export type City = string
 
 export interface Lead {
@@ -52,6 +51,26 @@ export interface Lead {
   extractedEmails?: string[]
   extractedPhones?: string[]
   extractedContactName?: string | null
+  
+  // New fields from enhanced scraper
+  companyId: string | null
+  companyIndustry: string | null
+  companySize: string | null
+  companyRating: number | null
+  companyOverview: string | null
+  jobLink: string | null
+  applyLink: string | null
+  salary: string | null
+  workType: string | null
+  workArrangement: string | null
+  numApplicants: string | null
+  classification: string | null
+  subClassification: string | null
+  datePostedRaw: string | null
+  expiresAt: string | null
+  state: string | null
+  country: string | null
+  isVerified: boolean
 }
 
 export interface NewLead {
@@ -85,6 +104,26 @@ export interface NewLead {
   extractedEmails?: string[]
   extractedPhones?: string[]
   extractedContactName?: string | null
+  
+  // New fields
+  companyId?: string | null
+  companyIndustry?: string | null
+  companySize?: string | null
+  companyRating?: number | null
+  companyOverview?: string | null
+  jobLink?: string | null
+  applyLink?: string | null
+  salary?: string | null
+  workType?: string | null
+  workArrangement?: string | null
+  numApplicants?: string | null
+  classification?: string | null
+  subClassification?: string | null
+  datePostedRaw?: string | null
+  expiresAt?: string | null
+  state?: string | null
+  country?: string | null
+  isVerified?: boolean
 }
 
 export interface LeadFilters {

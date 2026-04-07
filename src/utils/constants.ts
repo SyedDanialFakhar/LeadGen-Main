@@ -67,8 +67,8 @@ export const JOB_ROLES: string[] = [
   'Team Leader',
 ]
 
-// Minimum ad age - set to 0 to include all jobs (for testing), change to 7 for 7+ days only
-export const MIN_AD_AGE_DAYS = 0
+// Minimum ad age - set to 7 to only show jobs older than 7 days
+export const MIN_AD_AGE_DAYS = 7
 
 export const MAX_EMPLOYEE_COUNT = 500
 export const DAILY_EMAIL_LIMIT = 100
