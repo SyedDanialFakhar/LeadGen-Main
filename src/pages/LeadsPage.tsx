@@ -75,13 +75,11 @@ export function LeadsPage() {
         />
       </div>
 
-      {/* Lead Detail Modal */}
       <LeadDetailModal
         lead={selectedLead}
         onClose={() => setSelectedLead(null)}
       />
 
-      {/* Add Lead Modal */}
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}

@@ -32,7 +32,7 @@ export function LeadFilters() {
       {/* Platform */}
       <Select
         value={filters.platform ?? 'all'}
-        onChange={(e) => setFilter('platform', e.target.value as typeof filters.platform)}
+        onChange={(e) => setFilter('platform', e.target.value as any)}
         options={[
           { value: 'all', label: 'All Platforms' },
           ...PLATFORMS.map((p) => ({
@@ -43,10 +43,10 @@ export function LeadFilters() {
         containerClassName="min-w-[140px]"
       />
 
-      {/* City */}
+      {/* City - Now uses ilike for substring matching */}
       <Select
         value={filters.city ?? 'all'}
-        onChange={(e) => setFilter('city', e.target.value as typeof filters.city)}
+        onChange={(e) => setFilter('city', e.target.value as any)}
         options={[
           { value: 'all', label: 'All Cities' },
           ...CITIES.map((c) => ({ value: c, label: c })),
@@ -57,7 +57,7 @@ export function LeadFilters() {
       {/* Status */}
       <Select
         value={filters.status ?? 'all'}
-        onChange={(e) => setFilter('status', e.target.value as typeof filters.status)}
+        onChange={(e) => setFilter('status', e.target.value as any)}
         options={[
           { value: 'all', label: 'All Statuses' },
           { value: 'new', label: 'New' },
@@ -72,9 +72,7 @@ export function LeadFilters() {
       {/* Enrichment */}
       <Select
         value={filters.enrichmentStatus ?? 'all'}
-        onChange={(e) =>
-          setFilter('enrichmentStatus', e.target.value as typeof filters.enrichmentStatus)
-        }
+        onChange={(e) => setFilter('enrichmentStatus', e.target.value as any)}
         options={[
           { value: 'all', label: 'All Enrichment' },
           { value: 'pending', label: 'Pending' },

@@ -6,6 +6,15 @@ import { dbRowToLead, newLeadToDbRow, leadUpdatesToDbRow } from '@/utils/mappers
 import { leadsToCSV, downloadCSV } from '@/utils/csvExport'
 import { getTodayISO } from '@/utils/dateUtils'
 
+// Helper function to build city filter with substring matching
+function buildCityFilter(query: any, city: string | undefined) {
+  if (!city || city === 'all') return query
+  
+  // Use ilike with wildcards to match any location containing the city name
+  // This handles "Arndell Park, Sydney NSW" matching "Sydney"
+  return query.ilike('city', `%${city}%`)
+}
+
 export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   let query = supabase
     .from('leads')
@@ -15,9 +24,12 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   if (filters?.platform && filters.platform !== 'all') {
     query = query.eq('platform', filters.platform)
   }
+  
+  // UPDATED: City filter now uses substring matching
   if (filters?.city && filters.city !== 'all') {
-    query = query.eq('city', filters.city)
+    query = buildCityFilter(query, filters.city)
   }
+  
   if (filters?.status && filters.status !== 'all') {
     query = query.eq('status', filters.status)
   }

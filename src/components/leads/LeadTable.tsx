@@ -1,12 +1,12 @@
 // src/components/leads/LeadTable.tsx
 import { useState } from 'react'
-import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X } from 'lucide-react'
+import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star } from 'lucide-react'
 import { LeadStatusBadge, EnrichmentBadge, PlatformBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import type { Lead, LeadStatus } from '@/types'
+import type { Lead, LeadStatus, MatchAssessment } from '@/types'
 import { formatDate } from '@/utils/dateUtils'
 import { useLeads } from '@/hooks/useLeads'
 import { cn } from '@/utils/cn'
@@ -19,14 +19,29 @@ interface LeadTableProps {
 
 const PAGE_SIZE = 20
 
+// Match assessment styles
+const MATCH_ASSESSMENT_STYLES: Record<MatchAssessment, string> = {
+  High: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
+  Medium: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800',
+  Low: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800',
+}
+
+const MATCH_ASSESSMENT_ICONS: Record<MatchAssessment, string> = {
+  High: '🔥',
+  Medium: '📊',
+  Low: '⚠️',
+}
+
 export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   const { updateLead, bulkUpdateStatus } = useLeads()
   const [selected, setSelected] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editingCharlieId, setEditingCharlieId] = useState<string | null>(null)
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null)
   const [tempComment, setTempComment] = useState('')
   const [tempCharlie, setTempCharlie] = useState('')
+  const [tempMatch, setTempMatch] = useState<MatchAssessment | null>(null)
 
   const totalPages = Math.ceil(leads.length / PAGE_SIZE)
   const paginated = leads.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -80,18 +95,21 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setTempCharlie('')
   }
 
-  const getMatchAssessment = (lead: Lead): { level: 'High' | 'Medium' | 'Low'; color: string } => {
-    let score = 0
-    
-    if (lead.contactEmail || lead.contactPhone) score += 2
-    if (lead.contactName) score += 1
-    if (lead.contactJobTitle) score += 1
-    if (lead.companyEmployeeCount && !lead.companyEmployeeCount.includes('1-10')) score += 1
-    if (!lead.isRecruitmentAgency && !lead.noAgencyDisclaimer) score += 1
-    
-    if (score >= 4) return { level: 'High', color: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' }
-    if (score >= 2) return { level: 'Medium', color: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20' }
-    return { level: 'Low', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20' }
+  // NEW: Match assessment handlers
+  const handleSaveMatchAssessment = (leadId: string, assessment: MatchAssessment) => {
+    updateLead({ id: leadId, updates: { matchAssessment: assessment } })
+    setEditingMatchId(null)
+    setTempMatch(null)
+  }
+
+  const handleEditMatchAssessment = (lead: Lead) => {
+    setTempMatch(lead.matchAssessment)
+    setEditingMatchId(lead.id)
+  }
+
+  const handleCancelMatchEdit = () => {
+    setEditingMatchId(null)
+    setTempMatch(null)
   }
 
   if (isLoading) {
@@ -170,8 +188,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
             {paginated.map((lead) => {
-              const matchAssessment = getMatchAssessment(lead)
-              
               return (
                 <tr
                   key={lead.id}
@@ -287,14 +303,69 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                       <span className="text-slate-400 text-xs">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-3">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-                      matchAssessment.color
-                    )}>
-                      {matchAssessment.level}
-                    </span>
+                  
+                  {/* NEW: Editable Match Assessment Column */}
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    {editingMatchId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={tempMatch || ''}
+                          onChange={(e) => setTempMatch(e.target.value as MatchAssessment)}
+                          className="px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                        >
+                          <option value="">Select...</option>
+                          <option value="High">🔥 High Match</option>
+                          <option value="Medium">📊 Medium Match</option>
+                          <option value="Low">⚠️ Low Match</option>
+                        </select>
+                        <button
+                          onClick={() => {
+                            if (tempMatch) {
+                              handleSaveMatchAssessment(lead.id, tempMatch)
+                            }
+                          }}
+                          className="p-1 text-green-600 hover:text-green-700"
+                          disabled={!tempMatch}
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelMatchEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className={cn(
+                          "group flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity px-2 py-1 rounded-md",
+                          lead.matchAssessment 
+                            ? MATCH_ASSESSMENT_STYLES[lead.matchAssessment] 
+                            : "bg-slate-100 dark:bg-slate-700/50 text-slate-500"
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEditMatchAssessment(lead)
+                        }}
+                      >
+                        {!lead.matchAssessment ? (
+                          <>
+                            <Star className="w-3.5 h-3.5" />
+                            <span className="text-xs">Set match</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-sm">{MATCH_ASSESSMENT_ICONS[lead.matchAssessment]}</span>
+                            <span className="text-xs font-medium">{lead.matchAssessment}</span>
+                          </>
+                        )}
+                        <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
+                      </div>
+                    )}
                   </td>
+                  
                   <td className="px-3 py-3">
                     <LeadStatusBadge status={lead.status} />
                   </td>

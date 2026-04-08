@@ -3,69 +3,54 @@ import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
 const APIFY_BASE = '/api/apify/v2'
-const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
+// CHANGED: Using parseforge/seek-scraper which properly supports URL parameters
+const SEEK_ACTOR_ID = 'parseforge~seek-scraper'
 
 /**
- * Seek's native dateRange values (used in URL):
- *   1 = last 1 day, 3 = last 3 days, 7 = last 7 days,
- *   14 = last 14 days, 30 = last 30 days
- *
- * IMPORTANT: We want jobs OLDER than N days, not newer.
- * So we intentionally do NOT pass dateRange when using "skip pages" strategy.
- * Instead we use `page` to jump past the newest results.
- *
- * Strategy:
- *  - If user wants jobs from "last 7 days": use dateRange=7  (Seek filters server-side)
- *  - If user wants to SKIP recent jobs (skip pages): use page= param to start deep
- *  - These two are MUTUALLY EXCLUSIVE — skip pages = no dateRange, and vice versa
+ * Builds a Seek search URL with all filters applied directly in the URL
+ * This approach uses parseforge's startUrl feature which respects all URL parameters
  */
 function buildSeekSearchUrl(config: ScrapeConfig): string {
-  const params = new URLSearchParams({
-    keywords: config.roleQuery,
-    sortMode: 'KeywordRelevance', // Always sort by date so newest first, pages are predictable
-  })
-
+  const params = new URLSearchParams()
+  
+  // Add keywords (job title)
+  if (config.roleQuery) {
+    params.append('keywords', config.roleQuery)
+  }
+  
   // Add location if not 'Australia'
   if (config.city && config.city !== 'Australia') {
     params.append('where', config.city)
   }
-
+  
+  // Always sort by date for predictable pagination
+  params.append('sortmode', 'ListedDate')
+  
   const skipPages = config.offset || 0
   const minAgeDays = config.minAgeDays || 0
-
-  if (skipPages > 0 && minAgeDays === 0) {
-    // ---- SKIP PAGES MODE ----
-    // User wants to jump past the N most recent pages to get older jobs.
-    // We start Seek from page (skipPages + 1) so Apify begins scraping there.
-    // Do NOT add dateRange here — we want whatever age is on that page.
-    const startPage = skipPages + 1
-    params.append('page', String(startPage))
-    console.log(`⏩ Skip mode: starting from page ${startPage} (~${skipPages * 20} newest jobs skipped)`)
-
-  } else if (minAgeDays > 0 && skipPages === 0) {
-    // ---- DATE RANGE MODE ----
-    // User wants only jobs from the last N days.
-    // Seek's dateRange param filters server-side — this is efficient, no wasted credits.
-    // Valid Seek dateRange values: 1, 3, 7, 14, 30
-    let dateRange: number
+  
+  // Add date range filter (works with parseforge)
+  if (minAgeDays > 0) {
+    let dateRange = 7
     if (minAgeDays <= 1) dateRange = 1
     else if (minAgeDays <= 3) dateRange = 3
     else if (minAgeDays <= 7) dateRange = 7
     else if (minAgeDays <= 14) dateRange = 14
     else dateRange = 30
-
-    params.append('dateRange', String(dateRange))
-    console.log(`📅 Date range mode: fetching jobs from last ${dateRange} days`)
-
-  } else if (skipPages === 0 && minAgeDays === 0) {
-    // ---- DEFAULT MODE ----
-    // No skip, no age filter — get newest jobs first
-    console.log(`📄 Default mode: newest jobs, page 1`)
+    params.append('daterange', String(dateRange))
+    console.log(`📅 Date range: last ${dateRange} days`)
   }
-
+  
+  // Add page skip for older jobs
+  if (skipPages > 0) {
+    const startPage = skipPages + 1
+    params.append('page', String(startPage))
+    console.log(`⏩ Starting from page ${startPage} (skipping ${skipPages} pages)`)
+  }
+  
   const finalUrl = `https://www.seek.com.au/jobs?${params.toString()}`
   console.log('✅ Final Seek URL:', finalUrl)
-
+  
   return finalUrl
 }
 
@@ -75,12 +60,17 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
 
   const searchUrl = buildSeekSearchUrl(config)
 
+  // ParseForge actor uses startUrl (singular) and respects all URL parameters
   const input = {
-    searchUrl: searchUrl,
-    maxResults: config.maxResults || 20,
+    startUrl: searchUrl,
+    maxItems: config.maxResults || 20,
+    includeDetails: true,  // Get full job details for filtering
+    proxyConfiguration: {
+      useApifyProxy: true
+    }
   }
 
-  console.log('📦 Apify input:', JSON.stringify(input, null, 2))
+  console.log('📦 Apify input for parseforge/seek-scraper:', JSON.stringify(input, null, 2))
 
   const response = await fetch(
     `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,

@@ -17,6 +17,9 @@ export type Platform = 'seek' | 'linkedin'
 
 export type City = string
 
+// NEW: Match assessment type
+export type MatchAssessment = 'Low' | 'Medium' | 'High'
+
 export interface Lead {
   id: string
   createdAt: string
@@ -71,6 +74,9 @@ export interface Lead {
   state: string | null
   country: string | null
   isVerified: boolean
+  
+  // NEW: Manual match assessment
+  matchAssessment: MatchAssessment | null
 }
 
 export interface NewLead {
@@ -124,6 +130,9 @@ export interface NewLead {
   state?: string | null
   country?: string | null
   isVerified?: boolean
+  
+  // NEW: Manual match assessment
+  matchAssessment?: MatchAssessment | null
 }
 
 export interface LeadFilters {
@@ -135,13 +144,6 @@ export interface LeadFilters {
   search?: string
   dateFrom?: string
   dateTo?: string
-}
-
-export interface LeadStats {
-  total: number
-  newToday: number
-  awaitingEnrichment: number
-  followUpNeeded: number
-  converted: number
-  called: number
+  // NEW: Match assessment filter
+  matchAssessment?: MatchAssessment | 'all' | 'null' | null
 }

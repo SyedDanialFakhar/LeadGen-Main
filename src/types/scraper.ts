@@ -25,32 +25,52 @@ export interface ScrapeRun {
   apifyRunId: string | null
 }
 
+// ParseForge actor field mapping
 export interface RawSeekJob {
-  id: string
+  // ParseForge specific fields
+  jobId: string
   title: string
-  roleId: string
-  jobLink: string
-  applyLink: string
-  salary: string | null
-  numApplicants: string | null
-  resumePercentage: number | null
-  coverLetterPercentage: number | null
-  workTypes: string | null
-  workArrangements: string | null
-  phoneNumbers: string[]
-  emails: string[]
-  listedAt: string
-  expiresAtUtc: string
-  isExternalApply: boolean
-  isVerified: boolean
-  hasRoleRequirements: boolean
-  content: {
+  companyName: string
+  location: string
+  salaryLabel: string | null
+  workType: string | null
+  workArrangement: string | null
+  classification: string
+  subClassification: string
+  teaser: string
+  listingDate: string
+  listingDateDisplay: string
+  isFeatured: boolean
+  bulletPoints: string[]
+  advertiserId: string
+  companyProfileUrl: string | null
+  jobContent: string
+  jobAbstract: string
+  questionnaire: any[]
+  isExpired: boolean
+  phoneNumber: string | null
+  url: string
+  shareLink: string
+  scrapedAt: string
+  imageUrl: string | null
+  
+  // Keep these for compatibility with existing code
+  id?: string
+  jobLink?: string
+  applyLink?: string
+  emails?: string[]
+  phoneNumbers?: string[]
+  listedAt?: string
+  expiresAtUtc?: string
+  isVerified?: boolean
+  hasRoleRequirements?: boolean
+  content?: {
     bulletPoints: string[]
     jobHook: string
     unEditedContent: string
     sections: string[]
   }
-  joblocationInfo: {
+  joblocationInfo?: {
     area: string
     displayLocation: string
     location: string
@@ -58,13 +78,13 @@ export interface RawSeekJob {
     countryCode: string
     suburb: string
   }
-  classificationInfo: {
+  classificationInfo?: {
     classification: string
     subClassification: string
   }
-  employerQuestions: any[]
-  employerVideo: string | null
-  companyProfile: {
+  employerQuestions?: any[]
+  employerVideo?: string | null
+  companyProfile?: {
     id: string
     name: string
     companyNameSlug: string
@@ -77,9 +97,9 @@ export interface RawSeekJob {
     overview: string
     perksAndBenefits: string | null
   }
-  companyOpenJobs: string
-  companyTags: string[]
-  advertiser: {
+  companyOpenJobs?: string
+  companyTags?: string[]
+  advertiser?: {
     id: string
     name: string
     logo: string | null
@@ -103,12 +123,11 @@ export interface RawSeekJob {
     specialisations: string[]
     placementCount: number
   }
-  // Fallback fields
-  location?: string
+  // Fallback fields (no duplicate location)
   company?: string
-  companyName?: string
+  companyNameFallback?: string
   jobAdUrl?: string
-  url?: string
+  urlFallback?: string
   datePosted?: string
   postedAt?: string
   publishedAt?: string

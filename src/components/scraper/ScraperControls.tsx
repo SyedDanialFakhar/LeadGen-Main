@@ -34,19 +34,41 @@ export function ScraperControls({
   const [useCustomCity, setUseCustomCity] = useState(false)
   const [maxResultsPerRun, setMaxResultsPerRun] = useState(20)
 
-  /**
-   * SEARCH MODE — mutually exclusive:
-   *   'newest'    → page 1, no filters (default)
-   *   'dateRange' → Seek server-side dateRange filter (last N days) — EFFICIENT, saves credits
-   *   'skipPages' → jump to page N to get older jobs
-   *
-   * Skip Pages + Date Range CANNOT be used together:
-   *   - skipPages jumps to older pages (no date filter)
-   *   - dateRange filters by recency on page 1
-   */
-  const [searchMode, setSearchMode] = useState<'newest' | 'dateRange' | 'skipPages'>('newest')
-  const [skipPages, setSkipPages] = useState(5)
-  const [minAgeDays, setMinAgeDays] = useState(7)
+  // Skip pages options
+  const [skipPages, setSkipPages] = useState(0)
+  const [skip0Enabled, setSkip0Enabled] = useState(true)
+  const [skip5Enabled, setSkip5Enabled] = useState(false)
+  const [skip10Enabled, setSkip10Enabled] = useState(false)
+  const [skip15Enabled, setSkip15Enabled] = useState(false)
+  const [skip20Enabled, setSkip20Enabled] = useState(false)
+  const [skip30Enabled, setSkip30Enabled] = useState(false)
+
+  // Date range options
+  const [minAgeDays, setMinAgeDays] = useState(0)
+  const [ageAllEnabled, setAgeAllEnabled] = useState(true)
+  const [age7Enabled, setAge7Enabled] = useState(false)
+  const [age14Enabled, setAge14Enabled] = useState(false)
+  const [age21Enabled, setAge21Enabled] = useState(false)
+  const [age30Enabled, setAge30Enabled] = useState(false)
+
+  const handleSkipChange = (pages: number) => {
+    setSkip0Enabled(pages === 0)
+    setSkip5Enabled(pages === 5)
+    setSkip10Enabled(pages === 10)
+    setSkip15Enabled(pages === 15)
+    setSkip20Enabled(pages === 20)
+    setSkip30Enabled(pages === 30)
+    setSkipPages(pages)
+  }
+
+  const handleAgeChange = (days: number) => {
+    setAgeAllEnabled(days === 0)
+    setAge7Enabled(days === 7)
+    setAge14Enabled(days === 14)
+    setAge21Enabled(days === 21)
+    setAge30Enabled(days === 30)
+    setMinAgeDays(days)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,10 +76,7 @@ export function ScraperControls({
     const city = useCustomCity ? customCity : selectedCity
     if (jobTitles.length === 0 || !city.trim()) return
 
-    const effectiveSkipPages = searchMode === 'skipPages' ? skipPages : 0
-    const effectiveMinAgeDays = searchMode === 'dateRange' ? minAgeDays : 0
-
-    onStart(jobTitles, city.trim(), maxResultsPerRun, effectiveSkipPages, effectiveMinAgeDays)
+    onStart(jobTitles, city.trim(), maxResultsPerRun, skipPages, minAgeDays)
   }
 
   const handleAddCustomRole = () => {
@@ -78,10 +97,22 @@ export function ScraperControls({
     return selectedCity === 'Australia' ? 'All Australia' : selectedCity
   }
 
-  const getSummarySearchMode = () => {
-    if (searchMode === 'dateRange') return `Last ${minAgeDays} days (Seek server-side filter) 💡 Credit-efficient`
-    if (searchMode === 'skipPages') return `Skip ${skipPages} pages → older jobs (~${getEstimatedAge(skipPages)})`
-    return 'Newest jobs first (page 1)'
+  const getSkipPagesDisplay = () => {
+    if (skipPages === 0) return 'None (newest first)'
+    if (skipPages === 5) return `Skip 5 pages (~100 newest jobs)`
+    if (skipPages === 10) return `Skip 10 pages (~200 newest jobs)`
+    if (skipPages === 15) return `Skip 15 pages (~300 newest jobs)`
+    if (skipPages === 20) return `Skip 20 pages (~400 newest jobs)`
+    if (skipPages === 30) return `Skip 30 pages (~600 newest jobs)`
+    return 'None'
+  }
+
+  const getAgeFilterDisplay = () => {
+    if (minAgeDays === 7) return 'Last 7 days'
+    if (minAgeDays === 14) return 'Last 14 days'
+    if (minAgeDays === 21) return 'Last 21 days'
+    if (minAgeDays === 30) return 'Last 30 days'
+    return 'All jobs (no date filter)'
   }
 
   return (
@@ -92,7 +123,7 @@ export function ScraperControls({
           <h3 className="font-semibold text-slate-900 dark:text-white">Scraper Configuration</h3>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Search for jobs across ANY Australian city — filters control which jobs you get
+          Search for jobs across ANY Australian city — filters are applied server-side to save credits
         </p>
       </CardHeader>
       <CardBody>
@@ -228,129 +259,134 @@ export function ScraperControls({
             <p className="text-xs text-slate-500">💡 Lower results = lower Apify credit usage</p>
           </div>
 
-          {/* ----------------------------------------------------------------
-              SEARCH MODE — replaces the old "Skip Pages" + "Date Filter"
-              which could previously be set simultaneously (causing conflicts).
-          ---------------------------------------------------------------- */}
-          <div className="space-y-3">
+          {/* Skip Pages Section */}
+          <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Search Mode
+              Skip Recent Jobs (Get Older Jobs)
             </label>
-
-            {/* Info box */}
-            <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
-              <Info className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <strong>How these work:</strong>
-                <br />• <strong>Newest first</strong> — page 1, no filters, fastest.
-                <br />• <strong>Date range</strong> — Seek filters server-side before scraping. Most credit-efficient for recent jobs.
-                <br />• <strong>Skip pages</strong> — jumps past N pages of new jobs to reach older listings. More pages skipped = older jobs.
-                <br />⚠️ Skip Pages and Date Range cannot be combined — pick one.
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-
-              {/* Option 1: Newest */}
-              <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
                 <input
                   type="radio"
-                  name="searchMode"
-                  checked={searchMode === 'newest'}
-                  onChange={() => setSearchMode('newest')}
+                  name="skipPages"
+                  checked={skip0Enabled}
+                  onChange={() => handleSkipChange(0)}
                 />
-                <div>
-                  <span className="text-sm font-medium">📄 Newest jobs first</span>
-                  <p className="text-xs text-slate-500 mt-0.5">Get today's freshest listings — no filters applied</p>
-                </div>
+                <span className="text-sm">None (newest first)</span>
               </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="skipPages"
+                  checked={skip5Enabled}
+                  onChange={() => handleSkipChange(5)}
+                />
+                <span className="text-sm">Skip 5 pages</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="skipPages"
+                  checked={skip10Enabled}
+                  onChange={() => handleSkipChange(10)}
+                />
+                <span className="text-sm">Skip 10 pages</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="skipPages"
+                  checked={skip15Enabled}
+                  onChange={() => handleSkipChange(15)}
+                />
+                <span className="text-sm">Skip 15 pages</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="skipPages"
+                  checked={skip20Enabled}
+                  onChange={() => handleSkipChange(20)}
+                />
+                <span className="text-sm">Skip 20 pages</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="skipPages"
+                  checked={skip30Enabled}
+                  onChange={() => handleSkipChange(30)}
+                />
+                <span className="text-sm">Skip 30 pages</span>
+              </label>
+            </div>
+            <p className="text-xs text-orange-600 dark:text-orange-400">{getSkipPagesDisplay()}</p>
+          </div>
 
-              {/* Option 2: Date Range */}
-              <div className={`rounded-lg border ${searchMode === 'dateRange' ? 'border-blue-400 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
-                <label className="flex items-center gap-3 p-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="searchMode"
-                    checked={searchMode === 'dateRange'}
-                    onChange={() => setSearchMode('dateRange')}
-                  />
-                  <div>
-                    <span className="text-sm font-medium">📅 Date range filter</span>
-                    <span className="ml-2 text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 rounded-full">
-                      💡 Credit-efficient
-                    </span>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Seek filters server-side — only fetches jobs from the last N days, so Apify doesn't scrape unnecessary pages
-                    </p>
-                  </div>
-                </label>
-                {searchMode === 'dateRange' && (
-                  <div className="px-4 pb-3">
-                    <div className="flex flex-wrap gap-2">
-                      {[1, 3, 7, 14, 30].map(days => (
-                        <label key={days} className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="dateRangeDays"
-                            checked={minAgeDays === days}
-                            onChange={() => setMinAgeDays(days)}
-                          />
-                          <span className="text-sm">Last {days} day{days > 1 ? 's' : ''}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
-                      ✅ Will only return jobs posted in the last {minAgeDays} day{minAgeDays > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                )}
-              </div>
+          {/* Date Range Section */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Date Range Filter
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={ageAllEnabled}
+                  onChange={() => handleAgeChange(0)}
+                />
+                <span className="text-sm">All jobs</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={age7Enabled}
+                  onChange={() => handleAgeChange(7)}
+                />
+                <span className="text-sm">Last 7 days</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={age14Enabled}
+                  onChange={() => handleAgeChange(14)}
+                />
+                <span className="text-sm">Last 14 days</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={age21Enabled}
+                  onChange={() => handleAgeChange(21)}
+                />
+                <span className="text-sm">Last 21 days</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={age30Enabled}
+                  onChange={() => handleAgeChange(30)}
+                />
+                <span className="text-sm">Last 30 days</span>
+              </label>
+            </div>
+            <p className="text-xs text-blue-600 dark:text-blue-400">{getAgeFilterDisplay()}</p>
+          </div>
 
-              {/* Option 3: Skip Pages */}
-              <div className={`rounded-lg border ${searchMode === 'skipPages' ? 'border-orange-400 dark:border-orange-500 bg-orange-50/50 dark:bg-orange-900/10' : 'border-slate-200 dark:border-slate-700'}`}>
-                <label className="flex items-center gap-3 p-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="searchMode"
-                    checked={searchMode === 'skipPages'}
-                    onChange={() => setSearchMode('skipPages')}
-                  />
-                  <div>
-                    <span className="text-sm font-medium">⏩ Skip pages (get older jobs)</span>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Jumps past the N newest pages — useful for finding jobs competitors haven't called yet
-                    </p>
-                  </div>
-                </label>
-                {searchMode === 'skipPages' && (
-                  <div className="px-4 pb-3">
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {[5, 10, 15, 20, 30].map(pages => (
-                        <label
-                          key={pages}
-                          className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-sm"
-                        >
-                          <input
-                            type="radio"
-                            name="skipPagesCount"
-                            checked={skipPages === pages}
-                            onChange={() => setSkipPages(pages)}
-                          />
-                          <span>
-                            Skip {pages} pages
-                            <br />
-                            <span className="text-xs text-slate-500">{getEstimatedAge(pages)}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
-                      ⏩ Will start from page {skipPages + 1} — skipping ~{skipPages * 20} newest jobs
-                    </p>
-                  </div>
-                )}
-              </div>
-
+          {/* Info Box */}
+          <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
+            <Info className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <strong>How filters work with parseforge/seek-scraper:</strong>
+              <br />• <strong>Skip pages</strong> — Starts from page X, skipping newer jobs
+              <br />• <strong>Date range</strong> — Limits to jobs from last X days
+              <br />• Both filters are applied server-side by Seek BEFORE scraping
+              <br />• You only pay for jobs that match your criteria — no wasted credits!
             </div>
           </div>
 
@@ -360,10 +396,8 @@ export function ScraperControls({
             <p>📌 Job Titles: {getAllJobTitles().length} selected</p>
             <p>📍 Location: {getCityDisplay()}</p>
             <p>📊 Max Results: {maxResultsPerRun} per job title</p>
-            <p>🎯 Mode: {getSummarySearchMode()}</p>
-            <p className="text-blue-700 dark:text-blue-400 mt-1">
-              💡 Total API calls: {getAllJobTitles().length} (one per job title, run in parallel)
-            </p>
+            <p>⏩ {getSkipPagesDisplay()}</p>
+            <p>📅 {getAgeFilterDisplay()}</p>
           </div>
 
           {/* Always-active filters */}
@@ -407,18 +441,11 @@ export function ScraperControls({
           <div className="text-xs text-slate-500 dark:text-slate-400 text-center space-y-1">
             <p>🌏 Supports ANY Australian city</p>
             <p>📊 Limited to {maxResultsPerRun} results per job title to save API credits</p>
+            <p>⏩ Skip pages to get older jobs</p>
+            <p>📅 Date range limits to last 7/14/21/30 days</p>
           </div>
         </form>
       </CardBody>
     </Card>
   )
-}
-
-// Helper
-function getEstimatedAge(skipPages: number): string {
-  if (skipPages <= 5) return '~3-5 days'
-  if (skipPages <= 10) return '~7-10 days'
-  if (skipPages <= 15) return '~10-14 days'
-  if (skipPages <= 20) return '~14-21 days'
-  return '~21-30 days'
 }

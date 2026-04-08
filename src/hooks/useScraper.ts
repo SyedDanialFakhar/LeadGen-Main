@@ -8,7 +8,6 @@ import {
   isRecruitmentAgency,
   hasUnwantedPhrases,
   isPrivateAdvertiser,
-  isJobOldEnough,
 } from '@/utils/contactExtractor'
 import { createScraperHistory, updateScraperHistory } from '@/services/scraperHistoryService'
 import type { JobResult, RawSeekJob, ScrapeConfig, City } from '@/types'
@@ -35,72 +34,50 @@ export function useScraper() {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`])
   }, [])
 
+  // ParseForge field mapping
   const processJobs = (rawResults: RawSeekJob[], minAgeDays: number = 0): JobResult[] => {
     const jobsMap = new Map<string, JobResult>()
     let invalidWebsiteCount = 0
-    let filteredByAge = 0
     let filteredByAgency = 0
     let filteredByPrivate = 0
     let filteredByPhrases = 0
 
     for (const job of rawResults) {
-      const description = job.content?.unEditedContent || ''
-      const companyName = job.advertiser?.name || job.companyProfile?.name || ''
-      const advertiserName = job.advertiser?.name || ''
-      const jobUrl = job.jobLink || `https://www.seek.com.au/job/${job.id}`
-
-      // Skip duplicates
-      if (jobsMap.has(jobUrl)) continue
-
-      // ---- FILTER 1: Recruitment Agency Check ----
-      if (isRecruitmentAgency(companyName, advertiserName)) {
-        filteredByAgency++
-        addLog(`🚫 Filtered out agency: ${companyName || advertiserName}`)
-        continue
-      }
-
-      // ---- FILTER 2: Private Advertiser Check ----
-      if (isPrivateAdvertiser(advertiserName)) {
-        filteredByPrivate++
-        addLog(`🏢 Filtered out private advertiser: ${companyName || advertiserName}`)
-        continue
-      }
-
-      // ---- FILTER 3: Unwanted Phrases Check ----
+      // ParseForge uses different field names
+      const description = job.jobContent || job.jobAbstract || ''
+      const companyName = job.companyName || ''
+      const advertiserName = job.companyName || ''
+      const jobUrl = job.url || job.shareLink || `https://www.seek.com.au/job/${job.jobId}`
+      const listedAt = job.listingDate || job.scrapedAt || ''
+      
+      // Extract emails and phones from description
+      const emails = extractEmails(description)
+      const phones = job.phoneNumber ? [job.phoneNumber] : extractPhones(description)
+      const contactName = extractContactName(description)
+      
+      // Check for unwanted phrases in description
       if (hasUnwantedPhrases(description)) {
         filteredByPhrases++
-        addLog(`📝 Filtered out: ${companyName || advertiserName} (contains "no agency" disclaimer)`)
         continue
       }
-
-      // ---- FILTER 4: Age check ----
-      if (minAgeDays > 0 && job.listedAt) {
-        try {
-          const postedDate = new Date(job.listedAt)
-          const today = new Date()
-          const diffMs = today.getTime() - postedDate.getTime()
-          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-          // Keep jobs within the requested window
-          if (diffDays > minAgeDays) {
-            filteredByAge++
-            continue
-          }
-        } catch (e) {
-          // If date parse fails, keep the job
-        }
+      
+      // Check for recruitment agency
+      if (isRecruitmentAgency(companyName, advertiserName)) {
+        filteredByAgency++
+        continue
       }
-
-      // Extract contact info
-      const emails = job.emails || extractEmails(description)
-      const phones = job.phoneNumbers || extractPhones(description)
-      const contactName = job.recruiterProfile?.name || extractContactName(description)
+      
+      // Check for private advertiser (if company name contains private)
+      if (isPrivateAdvertiser(advertiserName)) {
+        filteredByPrivate++
+        continue
+      }
 
       // Format date
       let formattedDate = 'Recently posted'
-      if (job.listedAt) {
+      if (listedAt) {
         try {
-          const date = new Date(job.listedAt)
+          const date = new Date(listedAt)
           if (!isNaN(date.getTime())) {
             formattedDate = date.toLocaleDateString('en-AU', {
               day: '2-digit',
@@ -112,85 +89,46 @@ export function useScraper() {
       }
 
       // Get location details
-      let location = 'Location not specified'
+      let location = job.location || 'Location not specified'
       let state = ''
       let country = 'Australia'
+      
+      const stateMatch = location.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)
+      if (stateMatch) state = stateMatch[1]
 
-      if (job.joblocationInfo?.displayLocation) {
-        location = job.joblocationInfo.displayLocation
-        const stateMatch = location.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)
-        if (stateMatch) state = stateMatch[1]
-      } else if (job.joblocationInfo?.location) {
-        location = job.joblocationInfo.location
-      }
-
-      if (job.joblocationInfo?.country) {
-        country = job.joblocationInfo.country
-      }
-
-      // Get company details with null checks
-      const companyProfile = job.companyProfile || {}
-
-      // Handle invalid website URLs
+      // Get company website from companyProfileUrl
       let companyWebsite: string | null = null
-      if (
-        companyProfile.website &&
-        companyProfile.website !== 'N/A' &&
-        companyProfile.website !== "Failed to construct 'URL': Invalid URL" &&
-        !companyProfile.website.includes('Failed to construct')
-      ) {
-        companyWebsite = companyProfile.website
+      if (job.companyProfileUrl && job.companyProfileUrl !== 'N/A') {
+        companyWebsite = job.companyProfileUrl
       }
-
       if (!companyWebsite) invalidWebsiteCount++
 
-      const companyIndustry =
-        companyProfile.industry && companyProfile.industry !== 'N/A' ? companyProfile.industry : null
-      const companySize =
-        companyProfile.size && companyProfile.size !== 'N/A' ? companyProfile.size : null
-      const companyRating =
-        companyProfile.rating && typeof companyProfile.rating === 'number' && companyProfile.rating > 0
-          ? companyProfile.rating
-          : null
-      const companyOverview =
-        companyProfile.overview && companyProfile.overview !== 'N, /, A'
-          ? companyProfile.overview
-          : null
-      const companyId = companyProfile.id || null
-      const companySlug = companyProfile.companyNameSlug || null
-      const companyProfileLink = companyProfile.profile || null
-      const companyNumberOfReviews =
-        companyProfile.numberOfReviews && typeof companyProfile.numberOfReviews === 'number' && companyProfile.numberOfReviews > 0
-          ? companyProfile.numberOfReviews
-          : null
-      const companyPerksAndBenefits = companyProfile.perksAndBenefits || null
-      const companyOpenJobs = job.companyOpenJobs || null
-      const companyTags = job.companyTags || []
-
+      // Get salary
+      const salary = job.salaryLabel || null
+      
       // Get work details
-      const workType = job.workTypes || null
-      const workArrangement = job.workArrangements || null
-
+      const workType = job.workType || null
+      const workArrangement = job.workArrangement || null
+      
       // Get classification
-      const classification = job.classificationInfo?.classification || ''
-      const subClassification = job.classificationInfo?.subClassification || ''
-
-      // Get applicant count
-      const numApplicants = job.numApplicants || null
-
-      // Get expiry date
-      let expiresAt: string | null = null
-      if (job.expiresAtUtc) {
-        try {
-          const expiryDate = new Date(job.expiresAtUtc)
-          if (!isNaN(expiryDate.getTime())) {
-            expiresAt = expiryDate.toLocaleDateString('en-AU')
-          }
-        } catch (e) {}
-      }
+      const classification = job.classification || ''
+      const subClassification = job.subClassification || ''
+      
+      // Get isVerified (inverse of isExpired)
+      const isVerified = !job.isExpired
+      
+      // Get applicant count (not available in parseforge, set to null)
+      const numApplicants = null
+      
+      // Get company size (not available in parseforge)
+      const companySize = null
+      const companyIndustry = null
+      const companyRating = null
+      const companyOverview = null
+      const companyId = job.advertiserId || null
 
       jobsMap.set(jobUrl, {
-        id: `${job.id}`,
+        id: job.jobId || `${Date.now()}`,
         companyId,
         companyName,
         companyWebsite,
@@ -198,32 +136,32 @@ export function useScraper() {
         companySize,
         companyRating,
         companyOverview,
-        companySlug,
-        companyProfileLink,
-        companyNumberOfReviews,
-        companyPerksAndBenefits,
-        companyOpenJobs,
-        companyTags,
+        companySlug: null,
+        companyProfileLink: job.companyProfileUrl || null,
+        companyNumberOfReviews: null,
+        companyPerksAndBenefits: null,
+        companyOpenJobs: null,
+        companyTags: [],
         jobTitle: job.title || 'Unknown Position',
         jobLink: jobUrl,
-        applyLink: job.applyLink || '',
-        salary: job.salary || null,
+        applyLink: jobUrl,
+        salary: salary,
         datePosted: formattedDate,
-        datePostedRaw: job.listedAt || '',
-        expiresAt,
+        datePostedRaw: listedAt,
+        expiresAt: null,
         city: location,
-        state,
-        country,
-        workType,
-        workArrangement,
-        numApplicants,
-        classification,
-        subClassification,
-        emails,
-        phones,
-        contactName,
+        state: state,
+        country: country,
+        workType: workType,
+        workArrangement: workArrangement,
+        numApplicants: numApplicants,
+        classification: classification,
+        subClassification: subClassification,
+        emails: emails,
+        phones: phones,
+        contactName: contactName,
         description: description.substring(0, 1000),
-        isVerified: job.isVerified || false,
+        isVerified: isVerified,
         platform: 'seek',
       })
     }
@@ -237,9 +175,6 @@ export function useScraper() {
     }
     if (filteredByPhrases > 0) {
       addLog(`📝 Filtered out ${filteredByPhrases} jobs with unwanted phrases`)
-    }
-    if (filteredByAge > 0) {
-      addLog(`📅 ${filteredByAge} jobs removed by age post-filter`)
     }
     if (invalidWebsiteCount > 0) {
       console.log(`⚠️ ${invalidWebsiteCount} jobs had invalid or missing company websites`)
@@ -274,17 +209,19 @@ export function useScraper() {
         addLog(`📍 Location: ${city === 'Australia' ? 'All Australia' : city}`)
         addLog(`📊 Requesting up to ${maxResults} results per job title`)
 
-        if (skipPages > 0 && minAgeDays === 0) {
+        if (skipPages > 0) {
           addLog(`⏩ Skip mode: skipping first ${skipPages} pages (~${skipPages * 20} newest jobs)`)
-          addLog(`📌 This fetches older jobs — estimated age: ${getEstimatedAge(skipPages)}`)
-        } else if (minAgeDays > 0 && skipPages === 0) {
+          addLog(`📌 Starting from page ${skipPages + 1} to get older jobs`)
+        }
+        if (minAgeDays > 0) {
           addLog(`📅 Date filter: fetching jobs posted in the last ${minAgeDays} days`)
-          addLog(`💡 Seek's server-side dateRange filter is active — saves API credits!`)
-        } else {
+          addLog(`💡 Seek's server-side date filter is active — saves API credits!`)
+        }
+        if (skipPages === 0 && minAgeDays === 0) {
           addLog(`📄 No filters — fetching newest jobs from page 1`)
         }
       } else {
-        addLog(`🔄 Loading more results (offset: ${offset})...`)
+        addLog(`🔄 Loading more results...`)
       }
 
       try {
@@ -294,7 +231,6 @@ export function useScraper() {
           setCurrentHistoryId(historyId)
         }
 
-        // Run all searches in PARALLEL for speed
         const searchPromises = jobTitles.map(async (jobTitle) => {
           const config: ScrapeConfig = {
             platform: 'seek',
@@ -305,7 +241,7 @@ export function useScraper() {
             offset: skipPages,
           }
 
-          addLog(`  🔍 Searching: "${jobTitle}" in ${city === 'Australia' ? 'All Australia' : city}`)
+          addLog(`  🔍 Searching: "${jobTitle}"`)
 
           try {
             const apifyRunId = await runSeekScraper(config)
@@ -333,7 +269,7 @@ export function useScraper() {
 
         addLog(`📦 Total raw results: ${allRawJobs.length} — now processing & filtering...`)
 
-        const processedJobs = processJobs(allRawJobs, minAgeDays)
+        const processedJobs = processJobs(allRawJobs)
 
         if (!isLoadMore) {
           setJobs(processedJobs)
@@ -430,13 +366,4 @@ export function useScraper() {
     clearResults,
     setCurrentPage,
   }
-}
-
-// Helper: estimate job age from skip pages
-function getEstimatedAge(skipPages: number): string {
-  if (skipPages <= 5) return '~3-5 days old'
-  if (skipPages <= 10) return '~7-10 days old'
-  if (skipPages <= 15) return '~10-14 days old'
-  if (skipPages <= 20) return '~14-21 days old'
-  return '~21-30 days old'
 }

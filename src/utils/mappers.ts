@@ -1,5 +1,5 @@
 // src/utils/mappers.ts
-import type { Lead, NewLead } from '@/types'
+import type { Lead, NewLead, MatchAssessment } from '@/types'
 
 // Convert DB snake_case row to TypeScript camelCase Lead
 export function dbRowToLead(row: Record<string, unknown>): Lead {
@@ -56,6 +56,8 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     state: (row.state as string) ?? null,
     country: (row.country as string) ?? null,
     isVerified: (row.is_verified as boolean) ?? false,
+    // NEW: Manual match assessment
+    matchAssessment: (row.match_assessment as MatchAssessment) ?? null,
   }
 }
 
@@ -109,6 +111,8 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     state: lead.state ?? null,
     country: lead.country ?? null,
     is_verified: lead.isVerified ?? false,
+    // NEW: Manual match assessment
+    match_assessment: lead.matchAssessment ?? null,
   }
 }
 
@@ -164,6 +168,8 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.state !== undefined) dbRow.state = updates.state
   if (updates.country !== undefined) dbRow.country = updates.country
   if (updates.isVerified !== undefined) dbRow.is_verified = updates.isVerified
+  // NEW: Manual match assessment
+  if (updates.matchAssessment !== undefined) dbRow.match_assessment = updates.matchAssessment
 
   dbRow.updated_at = new Date().toISOString()
 
