@@ -3,17 +3,26 @@ import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
 const APIFY_BASE = '/api/apify/v2'
-// CHANGED: Using parseforge/seek-scraper which properly supports dateRange
-const SEEK_ACTOR_ID = 'parseforge~seek-scraper'
+const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
 
 /**
- * Builds a SEEK search URL with proper dateRange filtering
- * This actor respects the dateRange parameter correctly
+ * Seek's native dateRange values (used in URL):
+ *   1 = last 1 day, 3 = last 3 days, 7 = last 7 days,
+ *   14 = last 14 days, 30 = last 30 days
+ *
+ * IMPORTANT: We want jobs OLDER than N days, not newer.
+ * So we intentionally do NOT pass dateRange when using "skip pages" strategy.
+ * Instead we use `page` to jump past the newest results.
+ *
+ * Strategy:
+ *  - If user wants jobs from "last 7 days": use dateRange=7  (Seek filters server-side)
+ *  - If user wants to SKIP recent jobs (skip pages): use page= param to start deep
+ *  - These two are MUTUALLY EXCLUSIVE — skip pages = no dateRange, and vice versa
  */
 function buildSeekSearchUrl(config: ScrapeConfig): string {
   const params = new URLSearchParams({
     keywords: config.roleQuery,
-    sortMode: 'KeywordRelevance',
+    sortMode: 'KeywordRelevance', // Always sort by date so newest first, pages are predictable
   })
 
   // Add location if not 'Australia'
@@ -21,20 +30,37 @@ function buildSeekSearchUrl(config: ScrapeConfig): string {
     params.append('where', config.city)
   }
 
+  const skipPages = config.offset || 0
   const minAgeDays = config.minAgeDays || 0
 
-  // dateRange works with parseforge/seek-scraper!
-  if (minAgeDays > 0) {
-    // Valid dateRange values: 1, 3, 7, 14, 30
-    let dateRange = 7
+  if (skipPages > 0 && minAgeDays === 0) {
+    // ---- SKIP PAGES MODE ----
+    // User wants to jump past the N most recent pages to get older jobs.
+    // We start Seek from page (skipPages + 1) so Apify begins scraping there.
+    // Do NOT add dateRange here — we want whatever age is on that page.
+    const startPage = skipPages + 1
+    params.append('page', String(startPage))
+    console.log(`⏩ Skip mode: starting from page ${startPage} (~${skipPages * 20} newest jobs skipped)`)
+
+  } else if (minAgeDays > 0 && skipPages === 0) {
+    // ---- DATE RANGE MODE ----
+    // User wants only jobs from the last N days.
+    // Seek's dateRange param filters server-side — this is efficient, no wasted credits.
+    // Valid Seek dateRange values: 1, 3, 7, 14, 30
+    let dateRange: number
     if (minAgeDays <= 1) dateRange = 1
     else if (minAgeDays <= 3) dateRange = 3
     else if (minAgeDays <= 7) dateRange = 7
     else if (minAgeDays <= 14) dateRange = 14
     else dateRange = 30
-    
+
     params.append('dateRange', String(dateRange))
     console.log(`📅 Date range mode: fetching jobs from last ${dateRange} days`)
+
+  } else if (skipPages === 0 && minAgeDays === 0) {
+    // ---- DEFAULT MODE ----
+    // No skip, no age filter — get newest jobs first
+    console.log(`📄 Default mode: newest jobs, page 1`)
   }
 
   const finalUrl = `https://www.seek.com.au/jobs?${params.toString()}`
@@ -49,11 +75,9 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
 
   const searchUrl = buildSeekSearchUrl(config)
 
-  // Different input format for parseforge/seek-scraper
   const input = {
-    startUrl: searchUrl,
-    maxItems: config.maxResults || 20,
-    includeDetails: true,  // Get full job details including description for filtering
+    searchUrl: searchUrl,
+    maxResults: config.maxResults || 20,
   }
 
   console.log('📦 Apify input:', JSON.stringify(input, null, 2))
