@@ -7,10 +7,13 @@ import { ScraperLog } from '@/components/scraper/ScraperLog'
 import { JobTable } from '@/components/scraper/JobTable'
 import { ScraperHistory } from '@/components/scraper/ScraperHistory'
 import { useScraper } from '@/hooks/useScraper'
+import { useLeads } from '@/hooks/useLeads'
+import { useToast } from '@/hooks/useToast'
 import { getScraperHistory, ScraperHistoryItem } from '@/services/scraperHistoryService'
 import { Card, CardBody } from '@/components/ui/Card'
-import { AlertCircle, Search, History, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { AlertCircle, Search, History, ChevronDown, ChevronUp, Save, CheckSquare, Square } from 'lucide-react'
+import type { LeadStatus, EnrichmentStatus } from '@/types'
 
 export function ScraperPage() {
   const {
@@ -28,6 +31,10 @@ export function ScraperPage() {
     setCurrentPage,
   } = useScraper()
   
+  const { createLeads } = useLeads()
+  const { showToast } = useToast()
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set())
+  const [isSaving, setIsSaving] = useState(false)
   const [history, setHistory] = useState<ScraperHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [showHistory, setShowHistory] = useState(false)
@@ -36,7 +43,6 @@ export function ScraperPage() {
     loadHistory()
   }, [])
 
-  // Reload history when jobs change (after new scrape)
   useEffect(() => {
     if (!isLoading && jobs.length > 0) {
       loadHistory()
@@ -55,16 +61,202 @@ export function ScraperPage() {
     }
   }
 
+  const handleSelectAll = () => {
+    if (selectedJobIds.size === jobs.length) {
+      setSelectedJobIds(new Set())
+    } else {
+      setSelectedJobIds(new Set(jobs.map(job => job.id)))
+    }
+  }
+
+  const handleSelectJob = (jobId: string) => {
+    const newSet = new Set(selectedJobIds)
+    if (newSet.has(jobId)) {
+      newSet.delete(jobId)
+    } else {
+      newSet.add(jobId)
+    }
+    setSelectedJobIds(newSet)
+  }
+
+  const handleSaveSelected = async () => {
+    const selectedJobs = jobs.filter(job => selectedJobIds.has(job.id))
+    if (selectedJobs.length === 0) {
+      showToast('No jobs selected', 'error')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const newLeads = selectedJobs.map(job => ({
+        datePosted: job.datePostedRaw || new Date().toISOString(),
+        jobAdUrl: job.jobLink,
+        platform: 'seek' as const,
+        city: job.city,
+        companyName: job.companyName,
+        jobTitle: job.jobTitle,
+        contactName: job.contactName,
+        contactJobTitle: null,
+        contactEmail: job.emails?.[0] || null,
+        contactPhone: job.phones?.[0] || null,
+        contactLinkedinUrl: null,
+        companyEmployeeCount: job.companySize,
+        companyLinkedinUrl: null,
+        companyWebsite: job.companyWebsite,
+        isRecruitmentAgency: false,
+        noAgencyDisclaimer: false,
+        adDescription: job.description,
+        reportingTo: null,
+        applicantCount: job.numApplicants ? parseInt(job.numApplicants) : null,
+        opsComments: null,
+        charlieFeedback: null,
+        status: 'new' as LeadStatus,
+        enrichmentStatus: 'pending' as EnrichmentStatus,
+        followUpRequired: false,
+        rawScrapeData: null,
+        extractedEmails: job.emails,
+        extractedPhones: job.phones,
+        extractedContactName: job.contactName,
+        companyId: null,
+        companyIndustry: job.companyIndustry,
+        companySize: job.companySize,
+        companyRating: job.companyRating,
+        companyOverview: job.companyOverview,
+        jobLink: job.jobLink,
+        applyLink: job.applyLink,
+        salary: job.salary,
+        workType: job.workType,
+        workArrangement: job.workArrangement,
+        numApplicants: job.numApplicants,
+        classification: job.classification,
+        subClassification: job.subClassification,
+        datePostedRaw: job.datePostedRaw,
+        expiresAt: job.expiresAt,
+        state: job.state,
+        country: job.country,
+        isVerified: job.isVerified,
+      }))
+
+      await createLeads(newLeads)
+      showToast(`Saved ${selectedJobs.length} leads to database`, 'success')
+      setSelectedJobIds(new Set())
+    } catch (err) {
+      showToast('Failed to save leads', 'error')
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveAll = async () => {
+    if (jobs.length === 0) {
+      showToast('No jobs to save', 'error')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const newLeads = jobs.map(job => ({
+        datePosted: job.datePostedRaw || new Date().toISOString(),
+        jobAdUrl: job.jobLink,
+        platform: 'seek' as const,
+        city: job.city,
+        companyName: job.companyName,
+        jobTitle: job.jobTitle,
+        contactName: job.contactName,
+        contactJobTitle: null,
+        contactEmail: job.emails?.[0] || null,
+        contactPhone: job.phones?.[0] || null,
+        contactLinkedinUrl: null,
+        companyEmployeeCount: job.companySize,
+        companyLinkedinUrl: null,
+        companyWebsite: job.companyWebsite,
+        isRecruitmentAgency: false,
+        noAgencyDisclaimer: false,
+        adDescription: job.description,
+        reportingTo: null,
+        applicantCount: job.numApplicants ? parseInt(job.numApplicants) : null,
+        opsComments: null,
+        charlieFeedback: null,
+        status: 'new' as LeadStatus,
+        enrichmentStatus: 'pending' as EnrichmentStatus,
+        followUpRequired: false,
+        rawScrapeData: null,
+        extractedEmails: job.emails,
+        extractedPhones: job.phones,
+        extractedContactName: job.contactName,
+        companyId: null,
+        companyIndustry: job.companyIndustry,
+        companySize: job.companySize,
+        companyRating: job.companyRating,
+        companyOverview: job.companyOverview,
+        jobLink: job.jobLink,
+        applyLink: job.applyLink,
+        salary: job.salary,
+        workType: job.workType,
+        workArrangement: job.workArrangement,
+        numApplicants: job.numApplicants,
+        classification: job.classification,
+        subClassification: job.subClassification,
+        datePostedRaw: job.datePostedRaw,
+        expiresAt: job.expiresAt,
+        state: job.state,
+        country: job.country,
+        isVerified: job.isVerified,
+      }))
+
+      await createLeads(newLeads)
+      showToast(`Saved all ${jobs.length} leads to database`, 'success')
+      setSelectedJobIds(new Set())
+    } catch (err) {
+      showToast('Failed to save leads', 'error')
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopNav
         title="Job Scraper"
         subtitle="Search any city in Australia - Limit results to save API credits"
+        actions={
+          jobs.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSelectAll}
+                leftIcon={selectedJobIds.size === jobs.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+              >
+                {selectedJobIds.size === jobs.length ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveSelected}
+                isLoading={isSaving}
+                disabled={selectedJobIds.size === 0}
+                leftIcon={<Save className="w-4 h-4" />}
+              >
+                Save Selected ({selectedJobIds.size})
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveAll}
+                isLoading={isSaving}
+                leftIcon={<Save className="w-4 h-4" />}
+              >
+                Save All ({jobs.length})
+              </Button>
+            </div>
+          ) : null
+        }
       />
       <div className="flex-1 p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           
-          {/* Header with button on the same row */}
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -89,7 +281,6 @@ export function ScraperPage() {
             </Button>
           </div>
 
-          {/* Collapsible Scraper History Section */}
           {showHistory && (
             <div className="animate-in slide-in-from-top-2 duration-300">
               <ScraperHistory history={history} isLoading={historyLoading} />
@@ -134,6 +325,10 @@ export function ScraperPage() {
                   totalJobs={totalJobs}
                   itemsPerPage={itemsPerPage}
                   onPageChange={setCurrentPage}
+                  selectedJobIds={selectedJobIds}
+                  onSelectJob={handleSelectJob}
+                  onSelectAll={handleSelectAll}
+                  allSelected={selectedJobIds.size === jobs.length}
                 />
               </CardBody>
             </Card>

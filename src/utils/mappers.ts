@@ -1,3 +1,4 @@
+// src/utils/mappers.ts
 import type { Lead, NewLead } from '@/types'
 
 // Convert DB snake_case row to TypeScript camelCase Lead
@@ -33,6 +34,28 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     emailSentAt: (row.email_sent_at as string) ?? null,
     followUpRequired: (row.follow_up_required as boolean) ?? false,
     rawScrapeData: (row.raw_scrape_data as Record<string, unknown>) ?? null,
+    extractedEmails: (row.extracted_emails as string[]) ?? null,
+    extractedPhones: (row.extracted_phones as string[]) ?? null,
+    extractedContactName: (row.extracted_contact_name as string) ?? null,
+    // New fields from enhanced scraper
+    companyId: (row.company_id as string) ?? null,
+    companyIndustry: (row.company_industry as string) ?? null,
+    companySize: (row.company_size as string) ?? null,
+    companyRating: row.company_rating as number ?? null,
+    companyOverview: (row.company_overview as string) ?? null,
+    jobLink: (row.job_link as string) ?? null,
+    applyLink: (row.apply_link as string) ?? null,
+    salary: (row.salary as string) ?? null,
+    workType: (row.work_type as string) ?? null,
+    workArrangement: (row.work_arrangement as string) ?? null,
+    numApplicants: (row.num_applicants as string) ?? null,
+    classification: (row.classification as string) ?? null,
+    subClassification: (row.sub_classification as string) ?? null,
+    datePostedRaw: (row.date_posted_raw as string) ?? null,
+    expiresAt: (row.expires_at as string) ?? null,
+    state: (row.state as string) ?? null,
+    country: (row.country as string) ?? null,
+    isVerified: (row.is_verified as boolean) ?? false,
   }
 }
 
@@ -64,6 +87,28 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     enrichment_status: lead.enrichmentStatus ?? 'pending',
     follow_up_required: lead.followUpRequired ?? false,
     raw_scrape_data: lead.rawScrapeData ?? null,
+    extracted_emails: lead.extractedEmails ?? null,
+    extracted_phones: lead.extractedPhones ?? null,
+    extracted_contact_name: lead.extractedContactName ?? null,
+    // New fields
+    company_id: lead.companyId ?? null,
+    company_industry: lead.companyIndustry ?? null,
+    company_size: lead.companySize ?? null,
+    company_rating: lead.companyRating ?? null,
+    company_overview: lead.companyOverview ?? null,
+    job_link: lead.jobLink ?? null,
+    apply_link: lead.applyLink ?? null,
+    salary: lead.salary ?? null,
+    work_type: lead.workType ?? null,
+    work_arrangement: lead.workArrangement ?? null,
+    num_applicants: lead.numApplicants ?? null,
+    classification: lead.classification ?? null,
+    sub_classification: lead.subClassification ?? null,
+    date_posted_raw: lead.datePostedRaw ?? null,
+    expires_at: lead.expiresAt ?? null,
+    state: lead.state ?? null,
+    country: lead.country ?? null,
+    is_verified: lead.isVerified ?? false,
   }
 }
 
@@ -98,24 +143,29 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.emailSentAt !== undefined) dbRow.email_sent_at = updates.emailSentAt
   if (updates.followUpRequired !== undefined) dbRow.follow_up_required = updates.followUpRequired
   if (updates.rawScrapeData !== undefined) dbRow.raw_scrape_data = updates.rawScrapeData
+  if (updates.extractedEmails !== undefined) dbRow.extracted_emails = updates.extractedEmails
+  if (updates.extractedPhones !== undefined) dbRow.extracted_phones = updates.extractedPhones
+  if (updates.extractedContactName !== undefined) dbRow.extracted_contact_name = updates.extractedContactName
+  if (updates.companyId !== undefined) dbRow.company_id = updates.companyId
+  if (updates.companyIndustry !== undefined) dbRow.company_industry = updates.companyIndustry
+  if (updates.companySize !== undefined) dbRow.company_size = updates.companySize
+  if (updates.companyRating !== undefined) dbRow.company_rating = updates.companyRating
+  if (updates.companyOverview !== undefined) dbRow.company_overview = updates.companyOverview
+  if (updates.jobLink !== undefined) dbRow.job_link = updates.jobLink
+  if (updates.applyLink !== undefined) dbRow.apply_link = updates.applyLink
+  if (updates.salary !== undefined) dbRow.salary = updates.salary
+  if (updates.workType !== undefined) dbRow.work_type = updates.workType
+  if (updates.workArrangement !== undefined) dbRow.work_arrangement = updates.workArrangement
+  if (updates.numApplicants !== undefined) dbRow.num_applicants = updates.numApplicants
+  if (updates.classification !== undefined) dbRow.classification = updates.classification
+  if (updates.subClassification !== undefined) dbRow.sub_classification = updates.subClassification
+  if (updates.datePostedRaw !== undefined) dbRow.date_posted_raw = updates.datePostedRaw
+  if (updates.expiresAt !== undefined) dbRow.expires_at = updates.expiresAt
+  if (updates.state !== undefined) dbRow.state = updates.state
+  if (updates.country !== undefined) dbRow.country = updates.country
+  if (updates.isVerified !== undefined) dbRow.is_verified = updates.isVerified
 
   dbRow.updated_at = new Date().toISOString()
 
   return dbRow
-}
-export function dbRowToScrapeRun(row: Record<string, unknown>) {
-  return {
-    id: row.id as string,
-    createdAt: row.created_at as string,
-    platform: row.platform as string,
-    city: row.city as string,
-    jobTitleQuery: row.job_title_query as string,
-    status: row.status as 'running' | 'completed' | 'failed',
-    leadsFound: (row.leads_found as number) ?? 0,
-    leadsFilteredOut: (row.leads_filtered_out as number) ?? 0,
-    leadsAdded: (row.leads_added as number) ?? 0,
-    errorMessage: (row.error_message as string) ?? null,
-    completedAt: (row.completed_at as string) ?? null,
-    apifyRunId: (row.apify_run_id as string) ?? null,
-  }
 }

@@ -1,13 +1,18 @@
-// src/types/job.ts
 export interface JobResult {
   id: string
-  companyId: string
+  companyId: string | null
   companyName: string
-  companyWebsite: string
-  companyIndustry: string
-  companySize: string
-  companyRating: number
-  companyOverview: string
+  companyWebsite: string | null
+  companyIndustry: string | null
+  companySize: string | null
+  companyRating: number | null
+  companyOverview: string | null
+  companySlug: string | null
+  companyProfileLink: string | null
+  companyNumberOfReviews: number | null
+  companyPerksAndBenefits: string | null
+  companyOpenJobs: string | null
+  companyTags: string[]
   jobTitle: string
   jobLink: string
   applyLink: string

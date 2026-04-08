@@ -1,4 +1,5 @@
 // src/utils/contactExtractor.ts
+
 /**
  * Extract email addresses from text
  */
@@ -61,7 +62,8 @@ export function isRecruitmentAgency(companyName: string, advertiserName?: string
     'headhunt', 'executive search', 'people solutions', 'workforce',
     'placement', 'resourcing', 'manpower', 'hays', 'randstad', 
     'robert half', 'michael page', 'kelly services', 'adecco',
-    'chandler macleod', 'hudson', 'talent international', 'peoplebank'
+    'chandler macleod', 'hudson', 'talent international', 'peoplebank',
+    'roc consulting', 'arrow executive', 'roc', 'gough', 'pagegroup'
   ];
   
   const searchText = `${companyName} ${advertiserName || ''}`.toLowerCase();
@@ -102,47 +104,25 @@ export function isPrivateAdvertiser(advertiserName?: string): boolean {
 
 /**
  * Check if job is old enough (minimum days)
- * Fixed: Now properly handles date parsing
+ * Returns true if job is OLDER than minDays
  */
 export function isJobOldEnough(datePosted: string, minDays: number = 7): boolean {
-  if (!datePosted) {
-    console.log('No date posted found, including job');
-    return true; // Include if no date (better to include than exclude)
-  }
+  if (!datePosted) return false;
   
   try {
-    // Handle different date formats
-    let parsedDate: Date;
-    
-    if (datePosted.includes('T')) {
-      // ISO format: 2025-07-30T23:46:54.688Z
-      parsedDate = new Date(datePosted);
-    } else if (datePosted.includes('/')) {
-      // Australian format: 30/07/2025
-      const parts = datePosted.split('/');
-      parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-    } else {
-      parsedDate = new Date(datePosted);
-    }
-    
-    // Check if date is valid
-    if (isNaN(parsedDate.getTime())) {
-      console.log('Invalid date:', datePosted, '- including job');
-      return true; // Include if date is invalid
-    }
-    
+    const postedDate = new Date(datePosted);
     const today = new Date();
+    // Reset time to midnight for accurate day comparison
     today.setHours(0, 0, 0, 0);
-    parsedDate.setHours(0, 0, 0, 0);
+    postedDate.setHours(0, 0, 0, 0);
     
-    const diffTime = today.getTime() - parsedDate.getTime();
+    const diffTime = today.getTime() - postedDate.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     
-    // Return true if job is at least minDays old, OR if minDays is 0 (include all)
-    if (minDays === 0) return true;
+    // Return true if job is at least minDays old
     return diffDays >= minDays;
   } catch (e) {
     console.error('Error parsing date:', datePosted, e);
-    return true; // Include on error to not miss jobs
+    return false;
   }
 }

@@ -2,43 +2,69 @@
 import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
-const APIFY_BASE = 'https://api.apify.com/v2'
-const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
+const APIFY_BASE = '/api/apify/v2'
+// CHANGED: Using parseforge/seek-scraper which properly supports dateRange
+const SEEK_ACTOR_ID = 'parseforge~seek-scraper'
+
+/**
+ * Builds a SEEK search URL with proper dateRange filtering
+ * This actor respects the dateRange parameter correctly
+ */
+function buildSeekSearchUrl(config: ScrapeConfig): string {
+  const params = new URLSearchParams({
+    keywords: config.roleQuery,
+    sortMode: 'KeywordRelevance',
+  })
+
+  // Add location if not 'Australia'
+  if (config.city && config.city !== 'Australia') {
+    params.append('where', config.city)
+  }
+
+  const minAgeDays = config.minAgeDays || 0
+
+  // dateRange works with parseforge/seek-scraper!
+  if (minAgeDays > 0) {
+    // Valid dateRange values: 1, 3, 7, 14, 30
+    let dateRange = 7
+    if (minAgeDays <= 1) dateRange = 1
+    else if (minAgeDays <= 3) dateRange = 3
+    else if (minAgeDays <= 7) dateRange = 7
+    else if (minAgeDays <= 14) dateRange = 14
+    else dateRange = 30
+    
+    params.append('dateRange', String(dateRange))
+    console.log(`📅 Date range mode: fetching jobs from last ${dateRange} days`)
+  }
+
+  const finalUrl = `https://www.seek.com.au/jobs?${params.toString()}`
+  console.log('✅ Final Seek URL:', finalUrl)
+
+  return finalUrl
+}
 
 export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
   const token = await getApifyToken()
   if (!token) throw new Error('Apify token not configured. Please add it in Settings.')
 
-  const input: any = {
-    searchTerm: config.roleQuery,
-    maxResults: config.maxResults || 20, // This should limit results
-    sortBy: 'ListedDate',
-  }
-  
-  // Add offset for pagination
-  if (config.offset && config.offset > 0) {
-    input.offset = config.offset
-  }
-  
-  // Only add location if not 'Australia'
-  if (config.city && config.city !== 'Australia') {
-    input.location = config.city
-  }
-  
-  // Add date range if needed
-  if (config.minAgeDays && config.minAgeDays > 0) {
-    input.dateRange = config.minAgeDays
+  const searchUrl = buildSeekSearchUrl(config)
+
+  // Different input format for parseforge/seek-scraper
+  const input = {
+    startUrl: searchUrl,
+    maxItems: config.maxResults || 20,
+    includeDetails: true,  // Get full job details including description for filtering
   }
 
-  console.log('Apify input:', JSON.stringify(input, null, 2))
+  console.log('📦 Apify input:', JSON.stringify(input, null, 2))
 
   const response = await fetch(
     `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,
     {
       method: 'POST',
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json' 
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(input),
     }
@@ -47,7 +73,18 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
   if (!response.ok) {
     const errorText = await response.text()
     console.error('Apify API error:', errorText)
-    throw new Error(`Apify run failed: ${response.status} - ${errorText}`)
+
+    let errorMessage = `Apify run failed: ${response.status}`
+    try {
+      const errorJson = JSON.parse(errorText)
+      if (errorJson.error?.message) {
+        errorMessage = `Apify error: ${errorJson.error.message}`
+      }
+    } catch (e) {
+      errorMessage = `Apify run failed: ${response.status}`
+    }
+
+    throw new Error(errorMessage)
   }
 
   const result = await response.json()
@@ -90,16 +127,14 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
 
   const runData = await runResponse.json()
   const datasetId = runData.data.defaultDatasetId
-  
+
   if (!datasetId) {
     throw new Error('No dataset found for this run')
   }
 
-  // Limit the number of results returned
-  const limitParam = limit ? `&limit=${limit}` : ''
-  
+  const actualLimit = limit || 20
   const response = await fetch(
-    `${APIFY_BASE}/datasets/${datasetId}/items?format=json&limit=1000${limitParam}`,
+    `${APIFY_BASE}/datasets/${datasetId}/items?limit=${actualLimit}`,
     { headers: { 'Authorization': `Bearer ${token}` } }
   )
 
@@ -108,12 +143,12 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
   }
 
   const data = await response.json()
-  
-  // If we have a limit, trim the results
-  if (limit && data.length > limit) {
-    return data.slice(0, limit)
+
+  if (data.length > actualLimit) {
+    console.log(`⚠️ API returned ${data.length}, limiting to ${actualLimit}`)
+    return data.slice(0, actualLimit)
   }
-  
+
   return data
 }
 

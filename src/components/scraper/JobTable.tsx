@@ -12,7 +12,8 @@ import {
   DollarSign,
   Clock,
   Users,
-  Award
+  Award,
+  Globe
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import type { JobResult } from '@/types'
@@ -23,6 +24,10 @@ interface JobTableProps {
   totalJobs: number
   itemsPerPage: number
   onPageChange: (page: number) => void
+  selectedJobIds?: Set<string>
+  onSelectJob?: (jobId: string) => void
+  onSelectAll?: () => void
+  allSelected?: boolean
 }
 
 export function JobTable({ 
@@ -30,7 +35,11 @@ export function JobTable({
   currentPage, 
   totalJobs, 
   itemsPerPage, 
-  onPageChange 
+  onPageChange,
+  selectedJobIds = new Set(),
+  onSelectJob,
+  onSelectAll,
+  allSelected = false
 }: JobTableProps) {
   const totalPages = Math.ceil(totalJobs / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -57,7 +66,6 @@ export function JobTable({
     }
   }
 
-  // Calculate days ago
   const getDaysAgo = (datePostedRaw: string) => {
     if (!datePostedRaw) return null
     try {
@@ -81,6 +89,16 @@ export function JobTable({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0">
             <tr className="border-b border-slate-200 dark:border-slate-700">
+              {onSelectJob && (
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelected && jobs.length > 0}
+                    onChange={onSelectAll}
+                    className="rounded border-slate-300"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Company</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Job Title</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Posted</th>
@@ -89,6 +107,7 @@ export function JobTable({
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Salary</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Work Type</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Company Size</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Company Website</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Contact Info</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">Actions</th>
             </tr>
@@ -98,6 +117,16 @@ export function JobTable({
               const daysAgo = getDaysAgo(job.datePostedRaw)
               return (
                 <tr key={job.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                  {onSelectJob && (
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedJobIds.has(job.id)}
+                        onChange={() => onSelectJob(job.id)}
+                        className="rounded border-slate-300"
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
@@ -184,6 +213,24 @@ export function JobTable({
                         {job.companySize || '—'}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {job.companyWebsite ? (
+                      <a
+                        href={job.companyWebsite}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-xs"
+                        title={job.companyWebsite}
+                      >
+                        <Globe className="w-3 h-3 shrink-0" />
+                        <span className="truncate max-w-[120px]">
+                          {job.companyWebsite.replace('https://', '').replace('http://', '').replace('www.', '')}
+                        </span>
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="space-y-1">
