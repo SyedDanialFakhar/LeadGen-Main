@@ -37,7 +37,6 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     extractedEmails: (row.extracted_emails as string[]) ?? null,
     extractedPhones: (row.extracted_phones as string[]) ?? null,
     extractedContactName: (row.extracted_contact_name as string) ?? null,
-    // New fields from enhanced scraper
     companyId: (row.company_id as string) ?? null,
     companyIndustry: (row.company_industry as string) ?? null,
     companySize: (row.company_size as string) ?? null,
@@ -48,7 +47,6 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     salary: (row.salary as string) ?? null,
     workType: (row.work_type as string) ?? null,
     workArrangement: (row.work_arrangement as string) ?? null,
-    numApplicants: (row.num_applicants as string) ?? null,
     classification: (row.classification as string) ?? null,
     subClassification: (row.sub_classification as string) ?? null,
     datePostedRaw: (row.date_posted_raw as string) ?? null,
@@ -56,7 +54,6 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     state: (row.state as string) ?? null,
     country: (row.country as string) ?? null,
     isVerified: (row.is_verified as boolean) ?? false,
-    // NEW: Manual match assessment
     matchAssessment: (row.match_assessment as MatchAssessment) ?? null,
   }
 }
@@ -92,7 +89,6 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     extracted_emails: lead.extractedEmails ?? null,
     extracted_phones: lead.extractedPhones ?? null,
     extracted_contact_name: lead.extractedContactName ?? null,
-    // New fields
     company_id: lead.companyId ?? null,
     company_industry: lead.companyIndustry ?? null,
     company_size: lead.companySize ?? null,
@@ -103,7 +99,6 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     salary: lead.salary ?? null,
     work_type: lead.workType ?? null,
     work_arrangement: lead.workArrangement ?? null,
-    num_applicants: lead.numApplicants ?? null,
     classification: lead.classification ?? null,
     sub_classification: lead.subClassification ?? null,
     date_posted_raw: lead.datePostedRaw ?? null,
@@ -111,7 +106,6 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     state: lead.state ?? null,
     country: lead.country ?? null,
     is_verified: lead.isVerified ?? false,
-    // NEW: Manual match assessment
     match_assessment: lead.matchAssessment ?? null,
   }
 }
@@ -160,7 +154,6 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.salary !== undefined) dbRow.salary = updates.salary
   if (updates.workType !== undefined) dbRow.work_type = updates.workType
   if (updates.workArrangement !== undefined) dbRow.work_arrangement = updates.workArrangement
-  if (updates.numApplicants !== undefined) dbRow.num_applicants = updates.numApplicants
   if (updates.classification !== undefined) dbRow.classification = updates.classification
   if (updates.subClassification !== undefined) dbRow.sub_classification = updates.subClassification
   if (updates.datePostedRaw !== undefined) dbRow.date_posted_raw = updates.datePostedRaw
@@ -168,7 +161,6 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.state !== undefined) dbRow.state = updates.state
   if (updates.country !== undefined) dbRow.country = updates.country
   if (updates.isVerified !== undefined) dbRow.is_verified = updates.isVerified
-  // NEW: Manual match assessment
   if (updates.matchAssessment !== undefined) dbRow.match_assessment = updates.matchAssessment
 
   dbRow.updated_at = new Date().toISOString()

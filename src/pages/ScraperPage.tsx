@@ -15,6 +15,42 @@ import { Button } from '@/components/ui/Button'
 import { AlertCircle, Search, History, ChevronDown, ChevronUp, Save, CheckSquare, Square } from 'lucide-react'
 import type { LeadStatus, EnrichmentStatus } from '@/types'
 
+// Helper for numeric fields (integer, numeric)
+const safeNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null
+  const strValue = String(value)
+  if (strValue === 'N/A') return null
+  if (strValue === 'null') return null
+  if (strValue === 'undefined') return null
+  if (strValue === '') return null
+  const num = Number(strValue)
+  return isNaN(num) ? null : num
+}
+
+// Helper for boolean fields
+const safeBoolean = (value: unknown): boolean | null => {
+  if (value === null || value === undefined) return null
+  if (value === 'N/A') return null
+  if (value === 'null') return null
+  if (value === 'undefined') return null
+  if (typeof value === 'boolean') return value
+  const strValue = String(value).toLowerCase()
+  if (strValue === 'true') return true
+  if (strValue === 'false') return false
+  return null
+}
+
+// Helper for text fields
+const safeString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null
+  if (value === 'N/A') return null
+  if (value === 'null') return null
+  if (value === 'undefined') return null
+  const strValue = String(value)
+  if (strValue === '') return null
+  return strValue
+}
+
 export function ScraperPage() {
   const {
     isLoading,
@@ -85,29 +121,29 @@ export function ScraperPage() {
       showToast('No jobs selected', 'error')
       return
     }
-
+    
     setIsSaving(true)
     try {
       const newLeads = selectedJobs.map(job => ({
         datePosted: job.datePostedRaw || new Date().toISOString(),
         jobAdUrl: job.jobLink,
         platform: 'seek' as const,
-        city: job.city,
-        companyName: job.companyName,
-        jobTitle: job.jobTitle,
-        contactName: job.contactName,
+        city: safeString(job.city),
+        companyName: safeString(job.companyName) || 'Unknown Company',
+        jobTitle: safeString(job.jobTitle) || 'Unknown Position',
+        contactName: safeString(job.contactName),
         contactJobTitle: null,
         contactEmail: job.emails?.[0] || null,
         contactPhone: job.phones?.[0] || null,
         contactLinkedinUrl: null,
-        companyEmployeeCount: job.companySize,
+        companyEmployeeCount: safeString(job.companySize),
         companyLinkedinUrl: null,
-        companyWebsite: job.companyWebsite,
+        companyWebsite: safeString(job.companyWebsite),
         isRecruitmentAgency: false,
         noAgencyDisclaimer: false,
-        adDescription: job.description,
+        adDescription: safeString(job.description),
         reportingTo: null,
-        applicantCount: job.numApplicants ? parseInt(job.numApplicants) : null,
+        applicantCount: safeNumber(job.numApplicants),
         opsComments: null,
         charlieFeedback: null,
         status: 'new' as LeadStatus,
@@ -116,32 +152,32 @@ export function ScraperPage() {
         rawScrapeData: null,
         extractedEmails: job.emails,
         extractedPhones: job.phones,
-        extractedContactName: job.contactName,
-        companyId: null,
-        companyIndustry: job.companyIndustry,
-        companySize: job.companySize,
-        companyRating: job.companyRating,
-        companyOverview: job.companyOverview,
-        jobLink: job.jobLink,
-        applyLink: job.applyLink,
-        salary: job.salary,
-        workType: job.workType,
-        workArrangement: job.workArrangement,
-        numApplicants: job.numApplicants,
-        classification: job.classification,
-        subClassification: job.subClassification,
-        datePostedRaw: job.datePostedRaw,
-        expiresAt: job.expiresAt,
-        state: job.state,
-        country: job.country,
-        isVerified: job.isVerified,
+        extractedContactName: safeString(job.contactName),
+        companyId: safeString(job.companyId),
+        companyIndustry: safeString(job.companyIndustry),
+        companySize: safeString(job.companySize),
+        companyRating: safeNumber(job.companyRating),
+        companyOverview: safeString(job.companyOverview),
+        jobLink: safeString(job.jobLink),
+        applyLink: safeString(job.applyLink),
+        salary: safeString(job.salary),
+        workType: safeString(job.workType),
+        workArrangement: safeString(job.workArrangement),
+        classification: safeString(job.classification),
+        subClassification: safeString(job.subClassification),
+        datePostedRaw: safeString(job.datePostedRaw),
+        expiresAt: safeString(job.expiresAt),
+        state: safeString(job.state),
+        country: safeString(job.country),
+        isVerified: safeBoolean(job.isVerified) ?? false,
       }))
-
+      
       await createLeads(newLeads)
-      showToast(`Saved ${selectedJobs.length} leads to database`, 'success')
+      showToast(`Saved ${selectedJobs.length} lead(s) to database`, 'success')
       setSelectedJobIds(new Set())
     } catch (err) {
-      showToast('Failed to save leads', 'error')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save leads'
+      showToast(errorMessage, 'error')
       console.error(err)
     } finally {
       setIsSaving(false)
@@ -160,22 +196,22 @@ export function ScraperPage() {
         datePosted: job.datePostedRaw || new Date().toISOString(),
         jobAdUrl: job.jobLink,
         platform: 'seek' as const,
-        city: job.city,
-        companyName: job.companyName,
-        jobTitle: job.jobTitle,
-        contactName: job.contactName,
+        city: safeString(job.city),
+        companyName: safeString(job.companyName) || 'Unknown Company',
+        jobTitle: safeString(job.jobTitle) || 'Unknown Position',
+        contactName: safeString(job.contactName),
         contactJobTitle: null,
         contactEmail: job.emails?.[0] || null,
         contactPhone: job.phones?.[0] || null,
         contactLinkedinUrl: null,
-        companyEmployeeCount: job.companySize,
+        companyEmployeeCount: safeString(job.companySize),
         companyLinkedinUrl: null,
-        companyWebsite: job.companyWebsite,
+        companyWebsite: safeString(job.companyWebsite),
         isRecruitmentAgency: false,
         noAgencyDisclaimer: false,
-        adDescription: job.description,
+        adDescription: safeString(job.description),
         reportingTo: null,
-        applicantCount: job.numApplicants ? parseInt(job.numApplicants) : null,
+        applicantCount: safeNumber(job.numApplicants),
         opsComments: null,
         charlieFeedback: null,
         status: 'new' as LeadStatus,
@@ -184,32 +220,32 @@ export function ScraperPage() {
         rawScrapeData: null,
         extractedEmails: job.emails,
         extractedPhones: job.phones,
-        extractedContactName: job.contactName,
-        companyId: null,
-        companyIndustry: job.companyIndustry,
-        companySize: job.companySize,
-        companyRating: job.companyRating,
-        companyOverview: job.companyOverview,
-        jobLink: job.jobLink,
-        applyLink: job.applyLink,
-        salary: job.salary,
-        workType: job.workType,
-        workArrangement: job.workArrangement,
-        numApplicants: job.numApplicants,
-        classification: job.classification,
-        subClassification: job.subClassification,
-        datePostedRaw: job.datePostedRaw,
-        expiresAt: job.expiresAt,
-        state: job.state,
-        country: job.country,
-        isVerified: job.isVerified,
+        extractedContactName: safeString(job.contactName),
+        companyId: safeString(job.companyId),
+        companyIndustry: safeString(job.companyIndustry),
+        companySize: safeString(job.companySize),
+        companyRating: safeNumber(job.companyRating),
+        companyOverview: safeString(job.companyOverview),
+        jobLink: safeString(job.jobLink),
+        applyLink: safeString(job.applyLink),
+        salary: safeString(job.salary),
+        workType: safeString(job.workType),
+        workArrangement: safeString(job.workArrangement),
+        classification: safeString(job.classification),
+        subClassification: safeString(job.subClassification),
+        datePostedRaw: safeString(job.datePostedRaw),
+        expiresAt: safeString(job.expiresAt),
+        state: safeString(job.state),
+        country: safeString(job.country),
+        isVerified: safeBoolean(job.isVerified) ?? false,
       }))
 
       await createLeads(newLeads)
-      showToast(`Saved all ${jobs.length} leads to database`, 'success')
+      showToast(`Saved all ${jobs.length} lead(s) to database`, 'success')
       setSelectedJobIds(new Set())
     } catch (err) {
-      showToast('Failed to save leads', 'error')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save leads'
+      showToast(errorMessage, 'error')
       console.error(err)
     } finally {
       setIsSaving(false)
@@ -220,7 +256,7 @@ export function ScraperPage() {
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopNav
         title="Job Scraper"
-        subtitle="Search any city in Australia - Limit results to save API credits"
+        subtitle="Search any city in Australia - Use Skip Pages to find older jobs"
         actions={
           jobs.length > 0 ? (
             <div className="flex items-center gap-2">
@@ -263,7 +299,7 @@ export function ScraperPage() {
                 Job Scraper
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Search for job titles in ANY Australian city - Results limited to save API credits
+                Search for job titles in ANY Australian city - Use "Skip Pages" to find older jobs
               </p>
             </div>
             <Button
@@ -347,12 +383,13 @@ export function ScraperPage() {
                   <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
                     Select job titles, choose ANY Australian city, and click search.
                   </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-2">
+                    💡 <span className="font-medium">Pro tip:</span> Use "Skip Pages" to get older jobs! 
+                    Each page has ~20 jobs. Skip 10 pages = go to page 11.
+                  </p>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-4">
                     🌏 Supports all Australian cities - Melbourne, Sydney, Brisbane, Perth, Adelaide,
                     Gold Coast, Newcastle, Wollongong, Geelong, Cairns, and more!
-                  </p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    💡 Each search is limited to 20 results to save API credits
                   </p>
                 </div>
               </CardBody>

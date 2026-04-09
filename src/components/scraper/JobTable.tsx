@@ -114,7 +114,7 @@ export function JobTable({
     })
   }, [jobs, ageFilter, customDays, customDateRange])
 
-  // Reset pagination when filter changes (optional - you might want to keep current page)
+  // Reset pagination when filter changes
   const handleFilterChange = (newFilter: AgeFilterType) => {
     setAgeFilter(newFilter)
     if (newFilter !== 'custom') {
@@ -132,8 +132,6 @@ export function JobTable({
 
   // Calculate filtered jobs pagination
   const filteredTotal = filteredJobs.length
-  const filteredStartIndex = 0
-  const filteredEndIndex = Math.min(filteredStartIndex + itemsPerPage, filteredTotal)
   const currentFilteredJobs = filteredJobs.slice(0, itemsPerPage)
 
   // Use filtered jobs if filters are active, otherwise use original jobs with pagination
@@ -433,7 +431,7 @@ export function JobTable({
                         onChange={() => onSelectJob(job.id)}
                         className="rounded border-slate-300"
                       />
-                    </td>
+                     </td>
                   )}
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
@@ -647,9 +645,12 @@ export function JobTable({
       {hasActiveFilters && displayJobs.length === 0 && (
         <div className="text-center py-8">
           <p className="text-slate-500 dark:text-slate-400">No jobs match your filter criteria</p>
-          <button onClick={clearFilters} className="mt-2 text-blue-600 hover:text-blue-700 text-sm">
-  Clear filters
-</button>
+          <button 
+            onClick={clearFilters} 
+            className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+          >
+            Clear filters
+          </button>
         </div>
       )}
     </div>

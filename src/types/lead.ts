@@ -17,7 +17,6 @@ export type Platform = 'seek' | 'linkedin'
 
 export type City = string
 
-// NEW: Match assessment type
 export type MatchAssessment = 'Low' | 'Medium' | 'High'
 
 export interface Lead {
@@ -66,7 +65,6 @@ export interface Lead {
   salary: string | null
   workType: string | null
   workArrangement: string | null
-  numApplicants: string | null
   classification: string | null
   subClassification: string | null
   datePostedRaw: string | null
@@ -75,7 +73,7 @@ export interface Lead {
   country: string | null
   isVerified: boolean
   
-  // NEW: Manual match assessment
+  // Manual match assessment
   matchAssessment: MatchAssessment | null
 }
 
@@ -83,7 +81,7 @@ export interface NewLead {
   datePosted: string
   jobAdUrl: string
   platform: Platform
-  city: City
+  city: City | null  
   companyName: string
   jobTitle: string
   contactName?: string | null
@@ -122,7 +120,6 @@ export interface NewLead {
   salary?: string | null
   workType?: string | null
   workArrangement?: string | null
-  numApplicants?: string | null
   classification?: string | null
   subClassification?: string | null
   datePostedRaw?: string | null
@@ -131,7 +128,7 @@ export interface NewLead {
   country?: string | null
   isVerified?: boolean
   
-  // NEW: Manual match assessment
+  // Manual match assessment
   matchAssessment?: MatchAssessment | null
 }
 
@@ -144,9 +141,9 @@ export interface LeadFilters {
   search?: string
   dateFrom?: string
   dateTo?: string
-  // NEW: Match assessment filter
   matchAssessment?: MatchAssessment | 'all' | 'null' | null
 }
+
 export interface LeadStats {
   total: number
   newToday: number

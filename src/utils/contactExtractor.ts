@@ -96,10 +96,23 @@ export function hasUnwantedPhrases(description: string): boolean {
 /**
  * Check if job is from private advertiser
  */
-export function isPrivateAdvertiser(advertiserName?: string): boolean {
-  if (!advertiserName) return false;
-  const privateKeywords = ['Private Advertiser', 'Confidential', 'Private', 'Direct Employer'];
-  return privateKeywords.some(keyword => advertiserName.includes(keyword));
+// src/utils/contactExtractor.ts
+
+/**
+ * Check if job is from private advertiser - ONLY filter if it's ACTUALLY private
+ * Many jobs have isPrivate = false but the function still filters them
+ */
+export function isPrivateAdvertiser(advertiserName?: string, isPrivate?: boolean): boolean {
+  // First check the explicit isPrivate flag from the advertiser object
+  if (isPrivate === true) return true
+  
+  // If no advertiser name, not private
+  if (!advertiserName) return false
+  
+  // Only filter if it's EXACTLY "Private Advertiser" (not contains)
+  // This prevents filtering normal companies that have "private" in their description
+  const exactPrivateNames = ['Private Advertiser', 'Confidential']
+  return exactPrivateNames.includes(advertiserName)
 }
 
 /**
