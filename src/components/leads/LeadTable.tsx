@@ -1,11 +1,12 @@
 // src/components/leads/LeadTable.tsx
 import { useState } from 'react'
-import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star } from 'lucide-react'
+import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle } from 'lucide-react'
 import { LeadStatusBadge, EnrichmentBadge, PlatformBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Modal } from '@/components/ui/Modal'
 import type { Lead, LeadStatus, MatchAssessment } from '@/types'
 import { formatDate } from '@/utils/dateUtils'
 import { useLeads } from '@/hooks/useLeads'
@@ -33,15 +34,39 @@ const MATCH_ASSESSMENT_ICONS: Record<MatchAssessment, string> = {
 }
 
 export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
-  const { updateLead, bulkUpdateStatus } = useLeads()
+  const { updateLead, bulkUpdateStatus, deleteLead } = useLeads()
   const [selected, setSelected] = useState<string[]>([])
   const [page, setPage] = useState(0)
+  
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Bulk delete modal state
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  
+  // Editing states for different fields
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editingCharlieId, setEditingCharlieId] = useState<string | null>(null)
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null)
+  const [editingContactNameId, setEditingContactNameId] = useState<string | null>(null)
+  const [editingContactRoleId, setEditingContactRoleId] = useState<string | null>(null)
+  const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null)
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null)
+  const [editingLinkedinId, setEditingLinkedinId] = useState<string | null>(null)
+  const [editingWebsiteId, setEditingWebsiteId] = useState<string | null>(null)
+  
+  // Temp values for editing
   const [tempComment, setTempComment] = useState('')
   const [tempCharlie, setTempCharlie] = useState('')
   const [tempMatch, setTempMatch] = useState<MatchAssessment | null>(null)
+  const [tempContactName, setTempContactName] = useState('')
+  const [tempContactRole, setTempContactRole] = useState('')
+  const [tempPhone, setTempPhone] = useState('')
+  const [tempEmail, setTempEmail] = useState('')
+  const [tempLinkedin, setTempLinkedin] = useState('')
+  const [tempWebsite, setTempWebsite] = useState('')
 
   const totalPages = Math.ceil(leads.length / PAGE_SIZE)
   const paginated = leads.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -63,6 +88,47 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setSelected([])
   }
 
+  // Single delete handlers
+  const handleDeleteClick = (lead: Lead, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setLeadToDelete(lead)
+    setDeleteModalOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!leadToDelete) return
+    
+    setIsDeleting(true)
+    try {
+      await deleteLead(leadToDelete.id)
+      setDeleteModalOpen(false)
+      setLeadToDelete(null)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Bulk delete handlers
+  const handleBulkDeleteClick = () => {
+    if (selected.length === 0) return
+    setBulkDeleteModalOpen(true)
+  }
+
+  const handleConfirmBulkDelete = async () => {
+    setIsDeleting(true)
+    try {
+      // Delete leads one by one or use bulk delete API
+      for (const id of selected) {
+        await deleteLead(id)
+      }
+      setSelected([])
+      setBulkDeleteModalOpen(false)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Comment handlers
   const handleSaveComment = (leadId: string, comment: string) => {
     updateLead({ id: leadId, updates: { opsComments: comment } })
     setEditingCommentId(null)
@@ -79,6 +145,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setTempComment('')
   }
 
+  // Charlie feedback handlers
   const handleSaveCharlie = (leadId: string, charlie: string) => {
     updateLead({ id: leadId, updates: { charlieFeedback: charlie } })
     setEditingCharlieId(null)
@@ -95,7 +162,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setTempCharlie('')
   }
 
-  // NEW: Match assessment handlers
+  // Match assessment handlers
   const handleSaveMatchAssessment = (leadId: string, assessment: MatchAssessment) => {
     updateLead({ id: leadId, updates: { matchAssessment: assessment } })
     setEditingMatchId(null)
@@ -110,6 +177,108 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   const handleCancelMatchEdit = () => {
     setEditingMatchId(null)
     setTempMatch(null)
+  }
+
+  // Contact Name handlers
+  const handleSaveContactName = (leadId: string, contactName: string) => {
+    updateLead({ id: leadId, updates: { contactName: contactName || null } })
+    setEditingContactNameId(null)
+    setTempContactName('')
+  }
+
+  const handleEditContactName = (lead: Lead) => {
+    setTempContactName(lead.contactName || '')
+    setEditingContactNameId(lead.id)
+  }
+
+  const handleCancelContactNameEdit = () => {
+    setEditingContactNameId(null)
+    setTempContactName('')
+  }
+
+  // Contact Role handlers
+  const handleSaveContactRole = (leadId: string, contactRole: string) => {
+    updateLead({ id: leadId, updates: { contactJobTitle: contactRole || null } })
+    setEditingContactRoleId(null)
+    setTempContactRole('')
+  }
+
+  const handleEditContactRole = (lead: Lead) => {
+    setTempContactRole(lead.contactJobTitle || '')
+    setEditingContactRoleId(lead.id)
+  }
+
+  const handleCancelContactRoleEdit = () => {
+    setEditingContactRoleId(null)
+    setTempContactRole('')
+  }
+
+  // Phone handlers
+  const handleSavePhone = (leadId: string, phone: string) => {
+    updateLead({ id: leadId, updates: { contactPhone: phone || null } })
+    setEditingPhoneId(null)
+    setTempPhone('')
+  }
+
+  const handleEditPhone = (lead: Lead) => {
+    setTempPhone(lead.contactPhone || '')
+    setEditingPhoneId(lead.id)
+  }
+
+  const handleCancelPhoneEdit = () => {
+    setEditingPhoneId(null)
+    setTempPhone('')
+  }
+
+  // Email handlers
+  const handleSaveEmail = (leadId: string, email: string) => {
+    updateLead({ id: leadId, updates: { contactEmail: email || null } })
+    setEditingEmailId(null)
+    setTempEmail('')
+  }
+
+  const handleEditEmail = (lead: Lead) => {
+    setTempEmail(lead.contactEmail || '')
+    setEditingEmailId(lead.id)
+  }
+
+  const handleCancelEmailEdit = () => {
+    setEditingEmailId(null)
+    setTempEmail('')
+  }
+
+  // LinkedIn handlers
+  const handleSaveLinkedin = (leadId: string, linkedin: string) => {
+    updateLead({ id: leadId, updates: { contactLinkedinUrl: linkedin || null } })
+    setEditingLinkedinId(null)
+    setTempLinkedin('')
+  }
+
+  const handleEditLinkedin = (lead: Lead) => {
+    setTempLinkedin(lead.contactLinkedinUrl || '')
+    setEditingLinkedinId(lead.id)
+  }
+
+  const handleCancelLinkedinEdit = () => {
+    setEditingLinkedinId(null)
+    setTempLinkedin('')
+  }
+
+  // Company Website handlers
+  const handleSaveWebsite = (leadId: string, website: string) => {
+    updateLead({ id: leadId, updates: { companyWebsite: website || null } })
+    setEditingWebsiteId(null)
+    setTempWebsite('')
+  }
+
+  const handleEditWebsite = (lead: Lead) => {
+    setTempWebsite(lead.companyWebsite || '')
+    setEditingWebsiteId(lead.id)
+  }
+
+  const handleCancelWebsiteEdit = () => {
+    setEditingWebsiteId(null)
+    setTempWebsite('')
   }
 
   if (isLoading) {
@@ -131,6 +300,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Bulk actions bar */}
       {selected.length > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
           <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -147,6 +317,15 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                 Mark {s}
               </Button>
             ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBulkDeleteClick}
+              leftIcon={<Trash2 className="w-4 h-4" />}
+              className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+            >
+              Delete {selected.length}
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
               Clear
             </Button>
@@ -184,6 +363,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ops Comments</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Charlie's Feedback</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -239,72 +419,242 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   <td className="px-3 py-3 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
                     {formatDate(lead.datePosted)}
                   </td>
-                  <td className="px-3 py-3 text-slate-600 dark:text-slate-400 max-w-[120px] truncate">
-                    {lead.contactName || '—'}
-                  </td>
-                  <td className="px-3 py-3 text-slate-600 dark:text-slate-400 max-w-[120px] truncate">
-                    {lead.contactJobTitle || '—'}
-                  </td>
-                  <td className="px-3 py-3">
-                    {lead.contactPhone ? (
-                      <a
-                        href={`tel:${lead.contactPhone}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-xs"
-                      >
-                        <Phone className="w-3 h-3" />
-                        <span>{lead.contactPhone}</span>
-                      </a>
+                  
+                  {/* Editable Contact Name */}
+                  <td className="px-3 py-3 max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                    {editingContactNameId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={tempContactName}
+                          onChange={(e) => setTempContactName(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="Contact name"
+                        />
+                        <button
+                          onClick={() => handleSaveContactName(lead.id, tempContactName)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelContactNameEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     ) : (
-                      <span className="text-slate-400 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    {lead.contactEmail ? (
-                      <a
-                        href={`mailto:${lead.contactEmail}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-xs"
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditContactName(lead)}
                       >
-                        <Mail className="w-3 h-3" />
-                        <span className="truncate max-w-[120px]">{lead.contactEmail}</span>
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    {lead.contactLinkedinUrl ? (
-                      <a
-                        href={lead.contactLinkedinUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        <Linkedin className="w-4 h-4" />
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    {lead.companyWebsite ? (
-                      <a
-                        href={lead.companyWebsite}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        <Globe className="w-4 h-4" />
-                      </a>
-                    ) : (
-                      <span className="text-slate-400 text-xs">—</span>
+                        <User className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.contactName || 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
                     )}
                   </td>
                   
-                  {/* NEW: Editable Match Assessment Column */}
+                  {/* Editable Role Title */}
+                  <td className="px-3 py-3 max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                    {editingContactRoleId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={tempContactRole}
+                          onChange={(e) => setTempContactRole(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="Role title"
+                        />
+                        <button
+                          onClick={() => handleSaveContactRole(lead.id, tempContactRole)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelContactRoleEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditContactRole(lead)}
+                      >
+                        <Briefcase className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.contactJobTitle || 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
+                  </td>
+                  
+                  {/* Editable Phone */}
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    {editingPhoneId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={tempPhone}
+                          onChange={(e) => setTempPhone(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="Phone number"
+                        />
+                        <button
+                          onClick={() => handleSavePhone(lead.id, tempPhone)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelPhoneEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditPhone(lead)}
+                      >
+                        <Phone className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.contactPhone || 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
+                  </td>
+                  
+                  {/* Editable Email */}
+                  <td className="px-3 py-3 max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                    {editingEmailId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="email"
+                          value={tempEmail}
+                          onChange={(e) => setTempEmail(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="email@example.com"
+                        />
+                        <button
+                          onClick={() => handleSaveEmail(lead.id, tempEmail)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelEmailEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditEmail(lead)}
+                      >
+                        <Mail className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.contactEmail || 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
+                  </td>
+                  
+                  {/* Editable LinkedIn */}
+                  <td className="px-3 py-3 max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                    {editingLinkedinId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="url"
+                          value={tempLinkedin}
+                          onChange={(e) => setTempLinkedin(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="https://linkedin.com/in/..."
+                        />
+                        <button
+                          onClick={() => handleSaveLinkedin(lead.id, tempLinkedin)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelLinkedinEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditLinkedin(lead)}
+                      >
+                        <Linkedin className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.contactLinkedinUrl ? 'View' : 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
+                  </td>
+                  
+                  {/* Editable Company URL */}
+                  <td className="px-3 py-3 max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                    {editingWebsiteId === lead.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="url"
+                          value={tempWebsite}
+                          onChange={(e) => setTempWebsite(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                          placeholder="https://company.com"
+                        />
+                        <button
+                          onClick={() => handleSaveWebsite(lead.id, tempWebsite)}
+                          className="p-1 text-green-600 hover:text-green-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={handleCancelWebsiteEdit}
+                          className="p-1 text-red-600 hover:text-red-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
+                        onClick={() => handleEditWebsite(lead)}
+                      >
+                        <Globe className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
+                          {lead.companyWebsite ? 'View' : 'Click to add'}
+                        </span>
+                        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    )}
+                  </td>
+                  
+                  {/* Match Assessment Column */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                     {editingMatchId === lead.id ? (
                       <div className="flex items-center gap-1">
@@ -345,10 +695,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                             ? MATCH_ASSESSMENT_STYLES[lead.matchAssessment] 
                             : "bg-slate-100 dark:bg-slate-700/50 text-slate-500"
                         )}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEditMatchAssessment(lead)
-                        }}
+                        onClick={() => handleEditMatchAssessment(lead)}
                       >
                         {!lead.matchAssessment ? (
                           <>
@@ -369,7 +716,9 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   <td className="px-3 py-3">
                     <LeadStatusBadge status={lead.status} />
                   </td>
-                  <td className="px-3 py-3 max-w-[200px]">
+                  
+                  {/* Ops Comments */}
+                  <td className="px-3 py-3 max-w-[200px]" onClick={(e) => e.stopPropagation()}>
                     {editingCommentId === lead.id ? (
                       <div className="flex items-center gap-1">
                         <input
@@ -378,22 +727,15 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                           onChange={(e) => setTempComment(e.target.value)}
                           className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           autoFocus
-                          onClick={(e) => e.stopPropagation()}
                         />
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleSaveComment(lead.id, tempComment)
-                          }}
+                          onClick={() => handleSaveComment(lead.id, tempComment)}
                           className="p-1 text-green-600 hover:text-green-700"
                         >
                           <Check className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleCancelCommentEdit()
-                          }}
+                          onClick={handleCancelCommentEdit}
                           className="p-1 text-red-600 hover:text-red-700"
                         >
                           <X className="w-3 h-3" />
@@ -402,10 +744,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     ) : (
                       <div
                         className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEditComment(lead)
-                        }}
+                        onClick={() => handleEditComment(lead)}
                       >
                         <span className="text-slate-500 dark:text-slate-400 text-xs truncate flex-1">
                           {lead.opsComments || 'Click to add comment'}
@@ -414,7 +753,9 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-3 max-w-[200px]">
+                  
+                  {/* Charlie's Feedback */}
+                  <td className="px-3 py-3 max-w-[200px]" onClick={(e) => e.stopPropagation()}>
                     {editingCharlieId === lead.id ? (
                       <div className="flex items-center gap-1">
                         <input
@@ -423,22 +764,15 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                           onChange={(e) => setTempCharlie(e.target.value)}
                           className="flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           autoFocus
-                          onClick={(e) => e.stopPropagation()}
                         />
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleSaveCharlie(lead.id, tempCharlie)
-                          }}
+                          onClick={() => handleSaveCharlie(lead.id, tempCharlie)}
                           className="p-1 text-green-600 hover:text-green-700"
                         >
                           <Check className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleCancelCharlieEdit()
-                          }}
+                          onClick={handleCancelCharlieEdit}
                           className="p-1 text-red-600 hover:text-red-700"
                         >
                           <X className="w-3 h-3" />
@@ -447,10 +781,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     ) : (
                       <div
                         className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEditCharlie(lead)
-                        }}
+                        onClick={() => handleEditCharlie(lead)}
                       >
                         <span className="text-slate-500 dark:text-slate-400 text-xs truncate flex-1">
                           {lead.charlieFeedback || 'Click to add feedback'}
@@ -458,6 +789,17 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                         <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     )}
+                  </td>
+                  
+                  {/* Actions Column - Delete Button */}
+                  <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={(e) => handleDeleteClick(lead, e)}
+                      className="p-1 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-400 transition-colors"
+                      title="Delete lead"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               )
@@ -496,6 +838,88 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           </div>
         </div>
       )}
+
+      {/* Single Delete Confirmation Modal */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => !isDeleting && setDeleteModalOpen(false)}
+        title="Delete Lead"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModalOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? <Spinner size="sm" /> : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex items-center gap-3 py-2">
+          <AlertTriangle className="w-8 h-8 text-red-500" />
+          <div>
+            <p className="font-medium text-slate-800 dark:text-slate-200">
+              Are you sure you want to delete this lead?
+            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Company: <span className="font-medium">{leadToDelete?.companyName}</span>
+            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Job: {leadToDelete?.jobTitle}
+            </p>
+            <p className="text-xs text-red-500 mt-2">
+              This action cannot be undone.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        isOpen={bulkDeleteModalOpen}
+        onClose={() => !isDeleting && setBulkDeleteModalOpen(false)}
+        title="Delete Multiple Leads"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setBulkDeleteModalOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmBulkDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? <Spinner size="sm" /> : `Delete ${selected.length} Leads`}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex items-center gap-3 py-2">
+          <AlertTriangle className="w-8 h-8 text-red-500" />
+          <div>
+            <p className="font-medium text-slate-800 dark:text-slate-200">
+              Are you sure you want to delete {selected.length} lead(s)?
+            </p>
+            <p className="text-xs text-red-500 mt-2">
+              This action cannot be undone. All data for these leads will be permanently removed.
+            </p>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -3,12 +3,12 @@ import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
 const APIFY_BASE = '/api/apify/v2'
-// CHANGED: Using parseforge/seek-scraper which properly supports URL parameters
-const SEEK_ACTOR_ID = 'parseforge~seek-scraper'
+// CHANGED: Using websift/seek-job-scraper which has rich fields and proper URL override
+const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
 
 /**
  * Builds a Seek search URL with all filters applied directly in the URL
- * This approach uses parseforge's startUrl feature which respects all URL parameters
+ * Using sortmode=ListedDate ensures page numbers consistently lead to older jobs
  */
 function buildSeekSearchUrl(config: ScrapeConfig): string {
   const params = new URLSearchParams()
@@ -29,7 +29,7 @@ function buildSeekSearchUrl(config: ScrapeConfig): string {
   const skipPages = config.offset || 0
   const minAgeDays = config.minAgeDays || 0
   
-  // Add date range filter (works with parseforge)
+  // Add date range filter
   if (minAgeDays > 0) {
     let dateRange = 7
     if (minAgeDays <= 1) dateRange = 1
@@ -41,7 +41,7 @@ function buildSeekSearchUrl(config: ScrapeConfig): string {
     console.log(`📅 Date range: last ${dateRange} days`)
   }
   
-  // Add page skip for older jobs
+  // Add page skip for older jobs - this is KEY for getting older jobs
   if (skipPages > 0) {
     const startPage = skipPages + 1
     params.append('page', String(startPage))
@@ -60,17 +60,17 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
 
   const searchUrl = buildSeekSearchUrl(config)
 
-  // ParseForge actor uses startUrl (singular) and respects all URL parameters
+  // websift/seek-job-scraper uses searchUrl (singular) - when provided, all other fields except maxResults are ignored
+  // This is CRITICAL for pagination - it prevents the scraper from resetting to page 1
   const input = {
-    startUrl: searchUrl,
-    maxItems: config.maxResults || 20,
-    includeDetails: true,  // Get full job details for filtering
+    searchUrl: searchUrl,  // Using searchUrl (not startUrl)
+    maxResults: config.maxResults || 20,  // websift uses maxResults
     proxyConfiguration: {
       useApifyProxy: true
     }
   }
 
-  console.log('📦 Apify input for parseforge/seek-scraper:', JSON.stringify(input, null, 2))
+  console.log('📦 Apify input for websift/seek-job-scraper:', JSON.stringify(input, null, 2))
 
   const response = await fetch(
     `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,

@@ -49,7 +49,7 @@ export function useLeads(filters?: LeadFilters) {
     mutationFn: deleteLead,
     onSuccess: () => {
       invalidate()
-      showToast('Lead deleted', 'success')
+      showToast('Lead deleted successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   })
@@ -57,18 +57,34 @@ export function useLeads(filters?: LeadFilters) {
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ids, status }: { ids: string[]; status: LeadStatus }) =>
       bulkUpdateStatus(ids, status),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       invalidate()
-      showToast('Leads updated', 'success')
+      showToast(`${variables.ids.length} lead(s) marked as ${variables.status}`, 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   })
 
   const createMutation = useMutation({
     mutationFn: createLeads,
-    onSuccess: (created) => {
+    onSuccess: (created, variables) => {
       invalidate()
-      showToast(`${created.length} lead(s) added`, 'success')
+      const newCount = created?.length || 0
+      const totalCount = variables.length
+      const duplicateCount = totalCount - newCount
+      
+      if (duplicateCount > 0 && newCount > 0) {
+        showToast(
+          `${newCount} new lead(s) added. ${duplicateCount} duplicate(s) skipped.`,
+          'success'
+        )
+      } else if (duplicateCount > 0 && newCount === 0) {
+        showToast(
+          `All ${duplicateCount} lead(s) already exist. Nothing added.`,
+          'info'
+        )
+      } else if (newCount > 0) {
+        showToast(`${newCount} lead(s) added`, 'success')
+      }
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   })
@@ -85,6 +101,7 @@ export function useLeads(filters?: LeadFilters) {
     createLeads: createMutation.mutate,
     isUpdating: updateMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isCreating: createMutation.isPending,
     exportToCSV: () => exportLeadsToCSV(filters),
     getLead,
   }

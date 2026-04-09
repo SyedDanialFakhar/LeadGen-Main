@@ -6,15 +6,6 @@ import { dbRowToLead, newLeadToDbRow, leadUpdatesToDbRow } from '@/utils/mappers
 import { leadsToCSV, downloadCSV } from '@/utils/csvExport'
 import { getTodayISO } from '@/utils/dateUtils'
 
-// Helper function to build city filter with substring matching
-function buildCityFilter(query: any, city: string | undefined) {
-  if (!city || city === 'all') return query
-  
-  // Use ilike with wildcards to match any location containing the city name
-  // This handles "Arndell Park, Sydney NSW" matching "Sydney"
-  return query.ilike('city', `%${city}%`)
-}
-
 export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   let query = supabase
     .from('leads')
@@ -25,9 +16,9 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
     query = query.eq('platform', filters.platform)
   }
   
-  // UPDATED: City filter now uses substring matching
+  // UPDATED: City filter with substring matching (ilike with wildcards)
   if (filters?.city && filters.city !== 'all') {
-    query = buildCityFilter(query, filters.city)
+    query = query.ilike('city', `%${filters.city}%`)
   }
   
   if (filters?.status && filters.status !== 'all') {
@@ -50,6 +41,15 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
       `company_name.ilike.%${filters.search}%,contact_name.ilike.%${filters.search}%,job_title.ilike.%${filters.search}%`
     )
   }
+  
+  // NEW: Match assessment filter
+  if (filters?.matchAssessment && filters.matchAssessment !== 'all') {
+    if (filters.matchAssessment === 'null') {
+      query = query.is('match_assessment', null)
+    } else {
+      query = query.eq('match_assessment', filters.matchAssessment)
+    }
+  }
 
   const { data, error } = await query
 
@@ -70,16 +70,55 @@ export async function getLead(id: string): Promise<Lead> {
   return dbRowToLead(data)
 }
 
-export async function createLeads(leads: NewLead[]): Promise<Lead[]> {
-  const rows = leads.map(newLeadToDbRow)
+// src/services/leadsService.ts
 
+export async function createLeads(leads: NewLead[]): Promise<Lead[]> {
+  if (leads.length === 0) return []
+  
+  // Extract all job URLs from the new leads
+  const jobUrls = leads.map(lead => lead.jobAdUrl)
+  
+  // Check which URLs already exist in the database
+  const { data: existingLeads, error: fetchError } = await supabase
+    .from('leads')
+    .select('job_ad_url')
+    .in('job_ad_url', jobUrls)
+  
+  if (fetchError) throw new Error(`Failed to check existing leads: ${fetchError.message}`)
+  
+  const existingUrls = new Set(existingLeads?.map(lead => lead.job_ad_url) || [])
+  
+  // Filter out leads that already exist (keep only NEW ones)
+  const newLeadsToInsert = leads.filter(lead => !existingUrls.has(lead.jobAdUrl))
+  const duplicateCount = leads.length - newLeadsToInsert.length
+  
+  // Log duplicates for debugging (optional)
+  if (duplicateCount > 0) {
+    console.log(`Skipping ${duplicateCount} duplicate lead(s) - already in database`)
+  }
+  
+  // If no new leads, return empty array
+  if (newLeadsToInsert.length === 0) {
+    console.log('All leads already exist, nothing to insert')
+    return []
+  }
+  
+  // Prepare rows for insertion
+  const rows = newLeadsToInsert.map(newLeadToDbRow)
+  const now = new Date().toISOString()
+  rows.forEach(row => {
+    row.created_at = now
+    row.updated_at = now
+  })
+  
+  // Insert only the new leads
   const { data, error } = await supabase
     .from('leads')
     .insert(rows)
     .select()
-
+  
   if (error) throw new Error(`Failed to create leads: ${error.message}`)
-
+  
   return (data ?? []).map(dbRowToLead)
 }
 

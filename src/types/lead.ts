@@ -147,3 +147,11 @@ export interface LeadFilters {
   // NEW: Match assessment filter
   matchAssessment?: MatchAssessment | 'all' | 'null' | null
 }
+export interface LeadStats {
+  total: number
+  newToday: number
+  awaitingEnrichment: number
+  followUpNeeded: number
+  converted: number
+  called: number
+}

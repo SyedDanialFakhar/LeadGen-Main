@@ -34,7 +34,7 @@ export function useScraper() {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`])
   }, [])
 
-  // ParseForge field mapping
+  // Process websift/seek-job-scraper results (rich fields)
   const processJobs = (rawResults: RawSeekJob[], minAgeDays: number = 0): JobResult[] => {
     const jobsMap = new Map<string, JobResult>()
     let invalidWebsiteCount = 0
@@ -43,19 +43,42 @@ export function useScraper() {
     let filteredByPhrases = 0
 
     for (const job of rawResults) {
-      // ParseForge uses different field names
-      const description = job.jobContent || job.jobAbstract || ''
-      const companyName = job.companyName || ''
-      const advertiserName = job.companyName || ''
-      const jobUrl = job.url || job.shareLink || `https://www.seek.com.au/job/${job.jobId}`
-      const listedAt = job.listingDate || job.scrapedAt || ''
+      // Extract data from websift's rich structure
+      const companyName = job.advertiser?.name || job.companyName || ''
+      const advertiserName = job.advertiser?.name || ''
       
-      // Extract emails and phones from description
-      const emails = extractEmails(description)
-      const phones = job.phoneNumber ? [job.phoneNumber] : extractPhones(description)
+      // Get company website from companyProfile
+      let companyWebsite: string | null = null
+      if (job.companyProfile?.website) {
+        companyWebsite = job.companyProfile.website
+      }
+      if (!companyWebsite) invalidWebsiteCount++
+      
+      // Get company details from companyProfile
+      const companyIndustry = job.companyProfile?.industry || null
+      const companySize = job.companyProfile?.size || null
+      const companyRating = job.companyProfile?.rating || null
+      const companyOverview = job.companyProfile?.overview || null
+      const companyId = job.advertiser?.id || null
+      const isVerified = job.advertiser?.isVerified || job.isVerified || false
+      
+      // Get location
+      const location = job.joblocationInfo?.displayLocation || job.location || 'Location not specified'
+      const state = job.joblocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
+      const country = job.joblocationInfo?.country || 'Australia'
+      const city = job.joblocationInfo?.suburb || job.joblocationInfo?.area || location.split(',')[0] || ''
+      
+      // Get description
+      const description = job.content?.unEditedContent || job.content?.jobHook || ''
+      
+      // Get emails and phones - websift extracts these!
+      const emails = job.emails || []
+      const phones = job.phoneNumbers || []
+      
+      // Extract contact name from description if not directly available
       const contactName = extractContactName(description)
       
-      // Check for unwanted phrases in description
+      // Check for unwanted phrases
       if (hasUnwantedPhrases(description)) {
         filteredByPhrases++
         continue
@@ -67,17 +90,18 @@ export function useScraper() {
         continue
       }
       
-      // Check for private advertiser (if company name contains private)
-      if (isPrivateAdvertiser(advertiserName)) {
+      // Check for private advertiser
+      if (isPrivateAdvertiser(advertiserName) || job.advertiser?.isPrivate) {
         filteredByPrivate++
         continue
       }
 
       // Format date
       let formattedDate = 'Recently posted'
-      if (listedAt) {
+      let datePostedRaw = job.listedAt || ''
+      if (datePostedRaw) {
         try {
-          const date = new Date(listedAt)
+          const date = new Date(datePostedRaw)
           if (!isNaN(date.getTime())) {
             formattedDate = date.toLocaleDateString('en-AU', {
               day: '2-digit',
@@ -88,47 +112,26 @@ export function useScraper() {
         } catch (e) {}
       }
 
-      // Get location details
-      let location = job.location || 'Location not specified'
-      let state = ''
-      let country = 'Australia'
-      
-      const stateMatch = location.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)
-      if (stateMatch) state = stateMatch[1]
-
-      // Get company website from companyProfileUrl
-      let companyWebsite: string | null = null
-      if (job.companyProfileUrl && job.companyProfileUrl !== 'N/A') {
-        companyWebsite = job.companyProfileUrl
-      }
-      if (!companyWebsite) invalidWebsiteCount++
-
       // Get salary
-      const salary = job.salaryLabel || null
+      const salary = job.salary || null
       
       // Get work details
-      const workType = job.workType || null
-      const workArrangement = job.workArrangement || null
+      const workType = job.workTypes?.[0] || null
+      const workArrangement = job.workArrangements?.[0] || null
       
       // Get classification
-      const classification = job.classification || ''
-      const subClassification = job.subClassification || ''
+      const classification = job.classificationInfo?.classification || ''
+      const subClassification = job.classificationInfo?.subClassification || ''
       
-      // Get isVerified (inverse of isExpired)
-      const isVerified = !job.isExpired
+      // Get applicant count
+      const numApplicants = job.numApplicants || null
       
-      // Get applicant count (not available in parseforge, set to null)
-      const numApplicants = null
-      
-      // Get company size (not available in parseforge)
-      const companySize = null
-      const companyIndustry = null
-      const companyRating = null
-      const companyOverview = null
-      const companyId = job.advertiserId || null
+      // Get job link
+      const jobLink = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
+      const applyLink = job.applyLink || jobLink
 
-      jobsMap.set(jobUrl, {
-        id: job.jobId || `${Date.now()}`,
+      jobsMap.set(jobLink, {
+        id: job.id || `${Date.now()}`,
         companyId,
         companyName,
         companyWebsite,
@@ -136,20 +139,20 @@ export function useScraper() {
         companySize,
         companyRating,
         companyOverview,
-        companySlug: null,
-        companyProfileLink: job.companyProfileUrl || null,
-        companyNumberOfReviews: null,
-        companyPerksAndBenefits: null,
-        companyOpenJobs: null,
-        companyTags: [],
+        companySlug: job.companyProfile?.companyNameSlug || null,
+        companyProfileLink: job.companyProfile ? `https://www.seek.com.au/companies/${job.companyProfile.companyNameSlug}` : null,
+        companyNumberOfReviews: job.companyProfile?.numberOfReviews || null,
+        companyPerksAndBenefits: job.companyProfile?.perksAndBenefits || null,
+        companyOpenJobs: job.companyOpenJobs || null,
+        companyTags: job.companyTags || [],
         jobTitle: job.title || 'Unknown Position',
-        jobLink: jobUrl,
-        applyLink: jobUrl,
+        jobLink: jobLink,
+        applyLink: applyLink,
         salary: salary,
         datePosted: formattedDate,
-        datePostedRaw: listedAt,
-        expiresAt: null,
-        city: location,
+        datePostedRaw: datePostedRaw,
+        expiresAt: job.expiresAtUtc || null,
+        city: city,
         state: state,
         country: country,
         workType: workType,
@@ -215,7 +218,6 @@ export function useScraper() {
         }
         if (minAgeDays > 0) {
           addLog(`📅 Date filter: fetching jobs posted in the last ${minAgeDays} days`)
-          addLog(`💡 Seek's server-side date filter is active — saves API credits!`)
         }
         if (skipPages === 0 && minAgeDays === 0) {
           addLog(`📄 No filters — fetching newest jobs from page 1`)
@@ -269,7 +271,7 @@ export function useScraper() {
 
         addLog(`📦 Total raw results: ${allRawJobs.length} — now processing & filtering...`)
 
-        const processedJobs = processJobs(allRawJobs)
+        const processedJobs = processJobs(allRawJobs, minAgeDays)
 
         if (!isLoadMore) {
           setJobs(processedJobs)

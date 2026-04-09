@@ -1,7 +1,7 @@
 // src/pages/SignUpPage.tsx
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SignUpForm } from '@/components/auth/SignUpForm'
+import { SignUpForm } from '@/components/auth/SignupForm'
 import { useAuth } from '@/hooks/useAuth'
 
 export function SignUpPage() {

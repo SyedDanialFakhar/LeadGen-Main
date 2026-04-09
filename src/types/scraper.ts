@@ -25,66 +25,27 @@ export interface ScrapeRun {
   apifyRunId: string | null
 }
 
-// ParseForge actor field mapping
+// Complete websift/seek-job-scraper field mapping
 export interface RawSeekJob {
-  // ParseForge specific fields
-  jobId: string
+  // Core identifiers
+  id: string
+  roleId: string
   title: string
-  companyName: string
-  location: string
-  salaryLabel: string | null
-  workType: string | null
-  workArrangement: string | null
-  classification: string
-  subClassification: string
-  teaser: string
-  listingDate: string
-  listingDateDisplay: string
-  isFeatured: boolean
-  bulletPoints: string[]
-  advertiserId: string
-  companyProfileUrl: string | null
-  jobContent: string
-  jobAbstract: string
-  questionnaire: any[]
-  isExpired: boolean
-  phoneNumber: string | null
-  url: string
-  shareLink: string
-  scrapedAt: string
-  imageUrl: string | null
+  jobLink: string
+  applyLink: string
   
-  // Keep these for compatibility with existing code
-  id?: string
-  jobLink?: string
-  applyLink?: string
-  emails?: string[]
-  phoneNumbers?: string[]
-  listedAt?: string
-  expiresAtUtc?: string
-  isVerified?: boolean
-  hasRoleRequirements?: boolean
-  content?: {
-    bulletPoints: string[]
-    jobHook: string
-    unEditedContent: string
-    sections: string[]
+  // Advertiser/Company info
+  advertiser: {
+    id: string
+    name: string
+    logo: string | null
+    isVerified: boolean
+    isPrivate: boolean
+    registrationDate: string
   }
-  joblocationInfo?: {
-    area: string
-    displayLocation: string
-    location: string
-    country: string
-    countryCode: string
-    suburb: string
-  }
-  classificationInfo?: {
-    classification: string
-    subClassification: string
-  }
-  employerQuestions?: any[]
-  employerVideo?: string | null
-  companyProfile?: {
+  
+  // Company Profile (rich data)
+  companyProfile: {
     id: string
     name: string
     companyNameSlug: string
@@ -97,17 +58,59 @@ export interface RawSeekJob {
     overview: string
     perksAndBenefits: string | null
   }
-  companyOpenJobs?: string
-  companyTags?: string[]
-  advertiser?: {
-    id: string
-    name: string
-    logo: string | null
-    isVerified: boolean
-    isPrivate: boolean
-    registrationDate: string
+  companyOpenJobs: string
+  companyTags: string[]
+  
+  // Location info
+  joblocationInfo: {
+    area: string
+    displayLocation: string
+    location: string
+    country: string
+    countryCode: string
+    suburb: string
   }
-  recruiterProfile?: {
+  
+  // Dates
+  listedAt: string
+  expiresAtUtc: string
+  
+  // Classification
+  classificationInfo: {
+    classification: string
+    subClassification: string
+  }
+  
+  // Salary & Work details
+  salary: string
+  workTypes: string[]
+  workArrangements: string[]
+  
+  // Content
+  content: {
+    bulletPoints: string[]
+    jobHook: string
+    unEditedContent: string
+    sections: string[]
+  }
+  
+  // Flags
+  isVerified: boolean
+  isExternalApply: boolean
+  hasRoleRequirements: boolean
+  
+  // Contact info (extracted by the actor!)
+  emails: string[]
+  phoneNumbers: string[]
+  
+  // Applicant metrics
+  numApplicants: string
+  
+  // Video
+  employerVideo: string | null
+  
+  // Recruiter info (if applicable)
+  recruiterProfile: {
     name: string
     rating: number
     reviewCount: number
@@ -123,16 +126,33 @@ export interface RawSeekJob {
     specialisations: string[]
     placementCount: number
   }
-  // Fallback fields (no duplicate location)
-  company?: string
-  companyNameFallback?: string
-  jobAdUrl?: string
-  urlFallback?: string
-  datePosted?: string
-  postedAt?: string
-  publishedAt?: string
+  recruiterSpecialisations: string[]
+  
+  // Employer questions
+  employerQuestions: any[]
+  
+  // Percentage requirements
+  coverLetterPercentage: number
+  resumePercentage: number
+  
+  // For backward compatibility with existing code
+  companyName?: string
+  companyWebsite?: string
+  location?: string
+  city?: string
+  state?: string
+  country?: string
   description?: string
   jobDescription?: string
+  datePosted?: string
+  datePostedRaw?: string
+  workType?: string
+  workArrangement?: string
+  classification?: string
+  subClassification?: string
+  salaryLabel?: string
+  isExpired?: boolean
+  url?: string
 }
 
 export interface RawLinkedInJob {

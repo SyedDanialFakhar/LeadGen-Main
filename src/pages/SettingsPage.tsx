@@ -121,12 +121,12 @@ function ApiKeyField({
 
 export function SettingsPage() {
   const { settings, isLoading, isError, error, saveSetting, isSaving } = useSettings()
-  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | undefined>(undefined)
 
   const handleSaveSetting = async (key: string, value: string) => {
     setSavingKey(key)
     await saveSetting(key, value)
-    setTimeout(() => setSavingKey(null), 500)
+    setTimeout(() => setSavingKey(undefined), 500)
   }
 
   if (isLoading) {
