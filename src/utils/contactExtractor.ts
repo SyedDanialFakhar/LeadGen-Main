@@ -86,7 +86,8 @@ export function hasUnwantedPhrases(description: string): boolean {
     'recruitment agencies need not apply',
     'no agency contact',
     'agency approaches will not be accepted',
-    'please do not contact'
+    'please do not contact',
+    'no direct calls'
   ];
   
   const lowerDesc = description.toLowerCase();
