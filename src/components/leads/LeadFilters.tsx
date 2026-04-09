@@ -14,7 +14,7 @@ export function LeadFilters() {
     filters.city !== 'all' ||
     filters.status !== 'all' ||
     filters.enrichmentStatus !== 'all' ||
-    filters.followUpOnly ||
+    // filters.followUpOnly ||
     !!filters.search
 
   return (
@@ -61,7 +61,7 @@ export function LeadFilters() {
         options={[
           { value: 'all', label: 'All Statuses' },
           { value: 'new', label: 'New' },
-          { value: 'assessed', label: 'Assessed' },
+          // { value: 'assessed', label: 'Assessed' },
           { value: 'called', label: 'Called' },
           { value: 'converted', label: 'Converted' },
           { value: 'closed', label: 'Closed' },
@@ -84,7 +84,7 @@ export function LeadFilters() {
       />
 
       {/* Follow-up toggle */}
-      <button
+      {/* <button
         onClick={() => setFilter('followUpOnly', !filters.followUpOnly)}
         className={`
           px-3 py-2 rounded-lg text-sm font-medium border transition-colors
@@ -96,7 +96,7 @@ export function LeadFilters() {
         `}
       >
         Follow-up Only
-      </button>
+      </button> */}
 
       {/* Clear filters */}
       {hasActiveFilters && (

@@ -1,7 +1,7 @@
 // src/types/lead.ts
 export type LeadStatus =
   | 'new'
-  | 'assessed'
+  // | 'assessed'
   | 'called'
   | 'converted'
   | 'closed'

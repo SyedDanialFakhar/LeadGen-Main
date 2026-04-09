@@ -271,7 +271,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             {selected.length} selected
           </span>
           <div className="flex items-center gap-2 ml-auto">
-            {(['assessed', 'called', 'converted', 'closed'] as LeadStatus[]).map((s) => (
+            {([ 'called', 'converted', 'closed'] as LeadStatus[]).map((s) => (
               <Button
                 key={s}
                 variant="outline"
