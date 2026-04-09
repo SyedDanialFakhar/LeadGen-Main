@@ -46,39 +46,85 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   // Bulk delete modal state
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   
-  // Single editing state (only one field can be edited at a time)
-  const [editingField, setEditingField] = useState<{
-    leadId: string
-    field: string
-    value: string
-  } | null>(null)
+  // Single editing state
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState<string>('')
+  const [originalValue, setOriginalValue] = useState<string>('')
   
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Auto-focus input when editing starts
   useEffect(() => {
-    if (editingField && inputRef.current) {
+    if (editingId && inputRef.current) {
       inputRef.current.focus()
     }
-  }, [editingField])
+  }, [editingId])
 
   // Handle save on Enter key
-  const handleKeyDown = (e: React.KeyboardEvent, leadId: string, field: string, value: string, saveCallback: () => void) => {
+  const handleKeyDown = (e: React.KeyboardEvent, leadId: string, field: string, currentValue: string, originalVal: string) => {
     if (e.key === 'Enter') {
-      saveCallback()
+      handleSave(leadId, field, currentValue, originalVal)
     } else if (e.key === 'Escape') {
-      setEditingField(null)
+      cancelEdit()
     }
   }
 
-  // Handle click outside to cancel
-  const handleBlur = (saveCallback: () => void) => {
-    // Small delay to allow save button click to register
-    setTimeout(() => {
-      if (editingField) {
-        saveCallback()
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditingField(null)
+    setEditingValue('')
+    setOriginalValue('')
+  }
+
+  const handleSave = (leadId: string, field: string, newValue: string, originalVal: string) => {
+    // Only update if value changed
+    if (newValue !== originalVal) {
+      const updates: Partial<Lead> = {}
+      
+      switch (field) {
+        case 'contactName':
+          updates.contactName = newValue || null
+          break
+        case 'contactRole':
+          updates.contactJobTitle = newValue || null
+          break
+        case 'phone':
+          updates.contactPhone = newValue || null
+          break
+        case 'email':
+          updates.contactEmail = newValue || null
+          break
+        case 'linkedin':
+          updates.contactLinkedinUrl = newValue || null
+          break
+        case 'opsComments':
+          updates.opsComments = newValue || null
+          break
+        case 'charlieFeedback':
+          updates.charlieFeedback = newValue || null
+          break
+        case 'matchAssessment':
+          if (newValue) {
+            updates.matchAssessment = newValue as MatchAssessment
+          }
+          break
       }
-    }, 150)
+      
+      if (Object.keys(updates).length > 0) {
+        updateLead({ id: leadId, updates })
+      }
+    }
+    
+    cancelEdit()
+  }
+
+  const startEdit = (leadId: string, field: string, currentValue: string | null | undefined) => {
+    const val = currentValue || ''
+    setEditingId(leadId)
+    setEditingField(field)
+    setEditingValue(val)
+    setOriginalValue(val)
   }
 
   const totalPages = Math.ceil(leads.length / PAGE_SIZE)
@@ -101,7 +147,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setSelected([])
   }
 
-  // Single delete handlers
   const handleDeleteClick = (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
     setLeadToDelete(lead)
@@ -121,7 +166,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     }
   }
 
-  // Bulk delete handlers
   const handleBulkDeleteClick = () => {
     if (selected.length === 0) return
     setBulkDeleteModalOpen(true)
@@ -138,58 +182,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     } finally {
       setIsDeleting(false)
     }
-  }
-
-  // Generic save handler
-  const saveField = (leadId: string, field: string, value: string, updateFn: (id: string, value: string) => void) => {
-    if (value.trim() === '') {
-      updateFn(leadId, '')
-    } else {
-      updateFn(leadId, value)
-    }
-    setEditingField(null)
-  }
-
-  // Specific update functions
-  const updateContactName = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { contactName: value || null } })
-  }
-
-  const updateContactRole = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { contactJobTitle: value || null } })
-  }
-
-  const updatePhone = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { contactPhone: value || null } })
-  }
-
-  const updateEmail = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { contactEmail: value || null } })
-  }
-
-  const updateLinkedin = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { contactLinkedinUrl: value || null } })
-  }
-
-  const updateComment = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { opsComments: value || null } })
-  }
-
-  const updateCharlie = (leadId: string, value: string) => {
-    updateLead({ id: leadId, updates: { charlieFeedback: value || null } })
-  }
-
-  const updateMatchAssessment = (leadId: string, value: MatchAssessment) => {
-    updateLead({ id: leadId, updates: { matchAssessment: value } })
-  }
-
-  // Start editing a field
-  const startEditing = (lead: Lead, field: string, currentValue: string | null | undefined) => {
-    setEditingField({
-      leadId: lead.id,
-      field,
-      value: currentValue || ''
-    })
   }
 
   if (isLoading) {
@@ -209,28 +201,25 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     )
   }
 
-  // Render cell with inline editing support
   const renderEditableCell = (
-    lead: Lead,
+    leadId: string,
     field: string,
     displayValue: string | null | undefined,
     placeholder: string,
-    updateFn: (leadId: string, value: string) => void,
     inputType: 'text' | 'email' | 'tel' | 'url' = 'text'
   ) => {
-    const isEditing = editingField?.leadId === lead.id && editingField?.field === field
-    const value = displayValue || ''
-
+    const isEditing = editingId === leadId && editingField === field
+    
     if (isEditing) {
       return (
         <div className="flex items-center gap-1 min-w-[140px]">
           <input
             ref={inputRef}
             type={inputType}
-            value={editingField?.value || ''}
-            onChange={(e) => setEditingField(prev => prev ? { ...prev, value: e.target.value } : null)}
-            onKeyDown={(e) => handleKeyDown(e, lead.id, field, editingField?.value || '', () => saveField(lead.id, field, editingField?.value || '', updateFn))}
-            onBlur={() => handleBlur(() => saveField(lead.id, field, editingField?.value || '', updateFn))}
+            value={editingValue}
+            onChange={(e) => setEditingValue(e.target.value)}
+            onKeyDown={(e) => handleKeyDown(e, leadId, field, editingValue, originalValue)}
+            onBlur={() => handleSave(leadId, field, editingValue, originalValue)}
             className="flex-1 px-2 py-1 text-xs rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
             placeholder={placeholder}
             onClick={(e) => e.stopPropagation()}
@@ -238,7 +227,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           <button
             onClick={(e) => {
               e.stopPropagation()
-              saveField(lead.id, field, editingField?.value || '', updateFn)
+              handleSave(leadId, field, editingValue, originalValue)
             }}
             className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 dark:hover:bg-green-900/20"
           >
@@ -247,7 +236,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           <button
             onClick={(e) => {
               e.stopPropagation()
-              setEditingField(null)
+              cancelEdit()
             }}
             className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
           >
@@ -262,7 +251,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors min-w-[80px]"
         onClick={(e) => {
           e.stopPropagation()
-          startEditing(lead, field, displayValue)
+          startEdit(leadId, field, displayValue)
         }}
       >
         <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
@@ -409,29 +398,20 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  {/* Contact Name - Editable */}
                   <td className="px-3 py-3">
-                    {renderEditableCell(lead, 'contactName', lead.contactName, 'Click to add', updateContactName, 'text')}
+                    {renderEditableCell(lead.id, 'contactName', lead.contactName, 'Click to add', 'text')}
                   </td>
-                  
-                  {/* Role Title - Editable */}
                   <td className="px-3 py-3">
-                    {renderEditableCell(lead, 'contactRole', lead.contactJobTitle, 'Click to add', updateContactRole, 'text')}
+                    {renderEditableCell(lead.id, 'contactRole', lead.contactJobTitle, 'Click to add', 'text')}
                   </td>
-                  
-                  {/* Phone - Editable */}
                   <td className="px-3 py-3">
-                    {renderEditableCell(lead, 'phone', lead.contactPhone, 'Click to add', updatePhone, 'tel')}
+                    {renderEditableCell(lead.id, 'phone', lead.contactPhone, 'Click to add', 'tel')}
                   </td>
-                  
-                  {/* Email - Editable */}
                   <td className="px-3 py-3">
-                    {renderEditableCell(lead, 'email', lead.contactEmail, 'Click to add', updateEmail, 'email')}
+                    {renderEditableCell(lead.id, 'email', lead.contactEmail, 'Click to add', 'email')}
                   </td>
-                  
-                  {/* LinkedIn - Editable */}
                   <td className="px-3 py-3">
-                    {renderEditableCell(lead, 'linkedin', lead.contactLinkedinUrl, 'Click to add', updateLinkedin, 'url')}
+                    {renderEditableCell(lead.id, 'linkedin', lead.contactLinkedinUrl, 'Click to add', 'url')}
                   </td>
                   
                   {/* Company URL - Non-editable clickable link */}
@@ -455,20 +435,15 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  {/* Match Assessment Column - Special dropdown */}
+                  {/* Match Assessment Column */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                    {editingField?.leadId === lead.id && editingField?.field === 'matchAssessment' ? (
+                    {editingId === lead.id && editingField === 'matchAssessment' ? (
                       <div className="flex items-center gap-1">
                         <select
                           ref={inputRef as any}
-                          value={editingField?.value || ''}
-                          onChange={(e) => setEditingField(prev => prev ? { ...prev, value: e.target.value } : null)}
-                          onBlur={() => {
-                            if (editingField?.value) {
-                              updateMatchAssessment(lead.id, editingField.value as MatchAssessment)
-                            }
-                            setEditingField(null)
-                          }}
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={() => handleSave(lead.id, 'matchAssessment', editingValue, originalValue)}
                           className="px-2 py-1 text-xs rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           <option value="">Select...</option>
@@ -476,6 +451,24 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                           <option value="Medium">📊 Medium Match</option>
                           <option value="Low">⚠️ Low Match</option>
                         </select>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSave(lead.id, 'matchAssessment', editingValue, originalValue)
+                          }}
+                          className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            cancelEdit()
+                          }}
+                          className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ) : (
                       <div
@@ -485,7 +478,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                             ? MATCH_ASSESSMENT_STYLES[lead.matchAssessment] 
                             : "bg-slate-100 dark:bg-slate-700/50 text-slate-500"
                         )}
-                        onClick={() => startEditing(lead, 'matchAssessment', lead.matchAssessment)}
+                        onClick={() => startEdit(lead.id, 'matchAssessment', lead.matchAssessment)}
                       >
                         {!lead.matchAssessment ? (
                           <>
@@ -506,18 +499,13 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   <td className="px-3 py-3">
                     <LeadStatusBadge status={lead.status} />
                   </td>
-                  
-                  {/* Ops Comments - Editable */}
                   <td className="px-3 py-3 max-w-[200px]">
-                    {renderEditableCell(lead, 'opsComments', lead.opsComments, 'Click to add comment', updateComment, 'text')}
+                    {renderEditableCell(lead.id, 'opsComments', lead.opsComments, 'Click to add comment', 'text')}
+                  </td>
+                  <td className="px-3 py-3 max-w-[200px]">
+                    {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', 'text')}
                   </td>
                   
-                  {/* Charlie's Feedback - Editable */}
-                  <td className="px-3 py-3 max-w-[200px]">
-                    {renderEditableCell(lead, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', updateCharlie, 'text')}
-                  </td>
-                  
-                  {/* Actions Column - Delete Button */}
                   <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={(e) => handleDeleteClick(lead, e)}
