@@ -8,6 +8,7 @@ import {
   isRecruitmentAgency,
   hasUnwantedPhrases,
   isPrivateAdvertiser,
+  isSalesJob,
 } from '@/utils/contactExtractor'
 import { createScraperHistory, updateScraperHistory } from '@/services/scraperHistoryService'
 import type { JobResult, RawSeekJob, ScrapeConfig, City } from '@/types'
@@ -22,199 +23,198 @@ export function useScraper() {
   const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [currentOffset, setCurrentOffset] = useState(0)
+  const [salesOnly, setSalesOnly] = useState(true) // NEW: Default to only Sales jobs
   const [lastSearchParams, setLastSearchParams] = useState<{
     jobTitles: string[]
     city: string
     maxResults: number
     skipPages: number
     minAgeDays: number
+    salesOnly: boolean
   } | null>(null)
 
   const addLog = useCallback((message: string) => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`])
   }, [])
 
-  // Process websift/seek-job-scraper results (rich fields)
-  // src/hooks/useScraper.ts - Updated processJobs function
+  const processJobs = (rawResults: RawSeekJob[], minAgeDays: number = 0, filterSalesOnly: boolean = true): JobResult[] => {
+    const jobsMap = new Map<string, JobResult>()
+    let invalidWebsiteCount = 0
+    let filteredByAgency = 0
+    let filteredByPrivate = 0
+    let filteredByPhrases = 0
+    let filteredBySales = 0
+    let noCompanyName = 0
 
-const processJobs = (rawResults: RawSeekJob[], minAgeDays: number = 0): JobResult[] => {
-  const jobsMap = new Map<string, JobResult>()
-  let invalidWebsiteCount = 0
-  let filteredByAgency = 0
-  let filteredByPrivate = 0
-  let filteredByPhrases = 0
-  let noCompanyName = 0
+    for (const job of rawResults) {
+      // SAFELY extract data with fallbacks
+      const companyName = job.advertiser?.name || job.companyName || 'Unknown Company'
+      const advertiserName = job.advertiser?.name || ''
+      
+      // Get classification
+      const classification = job.classificationInfo?.classification || job.classification || ''
+      const subClassification = job.classificationInfo?.subClassification || job.subClassification || ''
+      
+      // NEW: Sales filter - only keep jobs with "Sales" in classification
+      if (filterSalesOnly && !isSalesJob(classification)) {
+        console.log(`  ❌ Filtered (not Sales): ${classification} - ${companyName}`)
+        filteredBySales++
+        continue
+      }
+      
+      // Get company website
+      let companyWebsite: string | null = null
+      if (job.companyProfile?.website) {
+        companyWebsite = job.companyProfile.website
+      }
+      
+      if (!companyWebsite) invalidWebsiteCount++
+      
+      // Get company details
+      const companyIndustry = job.companyProfile?.industry || null
+      const companySize = job.companyProfile?.size || null
+      const companyRating = job.companyProfile?.rating || null
+      const companyOverview = job.companyProfile?.overview || null
+      const companyId = job.advertiser?.id || job.companyProfile?.id || null
+      const isVerified = job.advertiser?.isVerified || job.isVerified || false
+      
+      // Get location
+      const location = job.joblocationInfo?.displayLocation || job.location || 'Location not specified'
+      const state = job.joblocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
+      const country = job.joblocationInfo?.country || 'Australia'
+      const city = job.joblocationInfo?.suburb || job.joblocationInfo?.area || location.split(',')[0] || ''
+      
+      // Get description
+      const description = job.content?.unEditedContent || job.content?.jobHook || ''
+      
+      // Get emails and phones
+      const emails = job.emails || []
+      const phones = job.phoneNumbers || []
+      
+      // Extract contact name from description
+      const contactName = extractContactName(description)
+      
+      console.log(`Processing: ${companyName} - ${job.title} [${classification}]`)
+      
+      // Unwanted phrases filter
+      if (hasUnwantedPhrases(description)) {
+        console.log(`  ❌ Filtered by unwanted phrases: ${companyName}`)
+        filteredByPhrases++
+        continue
+      }
+      
+      // Agency filter
+      if (isRecruitmentAgency(companyName, advertiserName)) {
+        console.log(`  ❌ Filtered as recruitment agency: ${companyName}`)
+        filteredByAgency++
+        continue
+      }
+      
+      // Private advertiser filter
+      if (isPrivateAdvertiser(advertiserName, job.advertiser?.isPrivate)) {
+        console.log(`  ❌ Filtered as private advertiser: ${companyName}`)
+        filteredByPrivate++
+        continue
+      }
 
-  for (const job of rawResults) {
-    // SAFELY extract data with fallbacks
-    const companyName = job.advertiser?.name || job.companyName || 'Unknown Company'
-    const advertiserName = job.advertiser?.name || ''
-    
-    // Get company website - try multiple sources
-    let companyWebsite: string | null = null
-    if (job.companyProfile?.website) {
-      companyWebsite = job.companyProfile.website
+      if (!companyName || companyName === 'Unknown Company') {
+        console.log(`  ❌ No company name for job: ${job.title}`)
+        noCompanyName++
+        continue
+      }
+
+      // Format date
+      let formattedDate = 'Recently posted'
+      let datePostedRaw = job.listedAt || ''
+      if (datePostedRaw) {
+        try {
+          const date = new Date(datePostedRaw)
+          if (!isNaN(date.getTime())) {
+            formattedDate = date.toLocaleDateString('en-AU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+          }
+        } catch (e) {}
+      }
+
+      // Get salary
+      const salary = job.salary || null
+      
+      // Get work details
+      const workType = job.workTypes?.[0] || null
+      const workArrangement = job.workArrangements?.[0] || null
+      
+      // Get applicant count
+      let numApplicants = null
+      if (job.numApplicants && job.numApplicants !== 'N/A') {
+        numApplicants = job.numApplicants
+      }
+      
+      // Get job link
+      const jobLink = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
+      const applyLink = job.applyLink || jobLink
+
+      console.log(`  ✅ PASSED: ${companyName}`)
+
+      jobsMap.set(jobLink, {
+        id: job.id || `${Date.now()}`,
+        companyId,
+        companyName,
+        companyWebsite,
+        companyIndustry,
+        companySize,
+        companyRating,
+        companyOverview,
+        companySlug: job.companyProfile?.companyNameSlug || null,
+        companyProfileLink: job.companyProfile ? `https://www.seek.com.au/companies/${job.companyProfile.companyNameSlug}` : null,
+        companyNumberOfReviews: job.companyProfile?.numberOfReviews || null,
+        companyPerksAndBenefits: job.companyProfile?.perksAndBenefits || null,
+        companyOpenJobs: job.companyOpenJobs || null,
+        companyTags: job.companyTags || [],
+        jobTitle: job.title || 'Unknown Position',
+        jobLink: jobLink,
+        applyLink: applyLink,
+        salary: salary,
+        datePosted: formattedDate,
+        datePostedRaw: datePostedRaw,
+        expiresAt: job.expiresAtUtc || null,
+        city: city,
+        state: state,
+        country: country,
+        workType: workType,
+        workArrangement: workArrangement,
+        numApplicants: numApplicants,
+        classification: classification,
+        subClassification: subClassification,
+        emails: emails,
+        phones: phones,
+        contactName: contactName,
+        description: description.substring(0, 1000),
+        isVerified: isVerified,
+        platform: 'seek',
+      })
     }
-    
-    if (!companyWebsite) invalidWebsiteCount++
-    
-    // Get company details
-    const companyIndustry = job.companyProfile?.industry || null
-    const companySize = job.companyProfile?.size || null
-    const companyRating = job.companyProfile?.rating || null
-    const companyOverview = job.companyProfile?.overview || null
-    const companyId = job.advertiser?.id || job.companyProfile?.id || null
-    const isVerified = job.advertiser?.isVerified || job.isVerified || false
-    
-    // Get location
-    const location = job.joblocationInfo?.displayLocation || job.location || 'Location not specified'
-    const state = job.joblocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
-    const country = job.joblocationInfo?.country || 'Australia'
-    const city = job.joblocationInfo?.suburb || job.joblocationInfo?.area || location.split(',')[0] || ''
-    
-    // Get description
-    const description = job.content?.unEditedContent || job.content?.jobHook || ''
-    
-    // Get emails and phones - websift extracts these!
-    const emails = job.emails || []
-    const phones = job.phoneNumbers || []
-    
-    // Extract contact name from description if not directly available
-    const contactName = extractContactName(description)
-    
-    // LOG what's being filtered (for debugging)
-    console.log(`Processing: ${companyName} - ${job.title}`)
-    
-    // OPTIONAL: Comment out these filters temporarily to see if jobs appear
-    // Unwanted phrases filter - make it less aggressive or log why
-    if (hasUnwantedPhrases(description)) {
-      console.log(`  ❌ Filtered by unwanted phrases: ${companyName}`)
-      filteredByPhrases++
-      continue
-    }
-    
-    // Agency filter - check if it's actually an agency
-    if (isRecruitmentAgency(companyName, advertiserName)) {
-      console.log(`  ❌ Filtered as recruitment agency: ${companyName}`)
-      filteredByAgency++
-      continue
-    }
-    
-    // Private advertiser filter
-    if (isPrivateAdvertiser(advertiserName, job.advertiser?.isPrivate)) {
-      console.log(`  ❌ Filtered as private advertiser: ${companyName} (isPrivate: ${job.advertiser?.isPrivate})`)
-      filteredByPrivate++
-      continue
-    }
 
-    if (!companyName || companyName === 'Unknown Company') {
-      console.log(`  ❌ No company name for job: ${job.title}`)
-      noCompanyName++
-      continue
-    }
+    // Log filter statistics
+    console.log(`📊 Filter Results:`)
+    console.log(`  ✅ Passed: ${jobsMap.size} jobs`)
+    console.log(`  🚫 Agency filtered: ${filteredByAgency}`)
+    console.log(`  🏢 Private advertiser filtered: ${filteredByPrivate}`)
+    console.log(`  📝 Unwanted phrases filtered: ${filteredByPhrases}`)
+    console.log(`  📂 Non-Sales filtered: ${filteredBySales}`)
+    console.log(`  ❓ No company name: ${noCompanyName}`)
+    console.log(`  ⚠️ Invalid website: ${invalidWebsiteCount}`)
 
-    // Format date
-    let formattedDate = 'Recently posted'
-    let datePostedRaw = job.listedAt || ''
-    if (datePostedRaw) {
-      try {
-        const date = new Date(datePostedRaw)
-        if (!isNaN(date.getTime())) {
-          formattedDate = date.toLocaleDateString('en-AU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          })
-        }
-      } catch (e) {}
-    }
+    if (filteredByAgency > 0) addLog(`🚫 Filtered out ${filteredByAgency} recruitment agencies`)
+    if (filteredByPrivate > 0) addLog(`🏢 Filtered out ${filteredByPrivate} private advertisers`)
+    if (filteredByPhrases > 0) addLog(`📝 Filtered out ${filteredByPhrases} jobs with unwanted phrases`)
+    if (filteredBySales > 0) addLog(`📂 Filtered out ${filteredBySales} non-Sales jobs`)
+    if (invalidWebsiteCount > 0) addLog(`⚠️ ${invalidWebsiteCount} jobs had missing company websites (still included)`)
 
-    // Get salary
-    const salary = job.salary || null
-    
-    // Get work details
-    const workType = job.workTypes?.[0] || null
-    const workArrangement = job.workArrangements?.[0] || null
-    
-    // Get classification
-    const classification = job.classificationInfo?.classification || ''
-    const subClassification = job.classificationInfo?.subClassification || ''
-    
-    // Get applicant count
-    let numApplicants = null
-if (job.numApplicants && job.numApplicants !== 'N/A') {
-  numApplicants = job.numApplicants
-}
-    
-    // Get job link
-    const jobLink = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
-    const applyLink = job.applyLink || jobLink
-
-    console.log(`  ✅ PASSED: ${companyName}`)
-
-    jobsMap.set(jobLink, {
-      id: job.id || `${Date.now()}`,
-      companyId,
-      companyName,
-      companyWebsite,
-      companyIndustry,
-      companySize,
-      companyRating,
-      companyOverview,
-      companySlug: job.companyProfile?.companyNameSlug || null,
-      companyProfileLink: job.companyProfile ? `https://www.seek.com.au/companies/${job.companyProfile.companyNameSlug}` : null,
-      companyNumberOfReviews: job.companyProfile?.numberOfReviews || null,
-      companyPerksAndBenefits: job.companyProfile?.perksAndBenefits || null,
-      companyOpenJobs: job.companyOpenJobs || null,
-      companyTags: job.companyTags || [],
-      jobTitle: job.title || 'Unknown Position',
-      jobLink: jobLink,
-      applyLink: applyLink,
-      salary: salary,
-      datePosted: formattedDate,
-      datePostedRaw: datePostedRaw,
-      expiresAt: job.expiresAtUtc || null,
-      city: city,
-      state: state,
-      country: country,
-      workType: workType,
-      workArrangement: workArrangement,
-      numApplicants: numApplicants,
-      classification: classification,
-      subClassification: subClassification,
-      emails: emails,
-      phones: phones,
-      contactName: contactName,
-      description: description.substring(0, 1000),
-      isVerified: isVerified,
-      platform: 'seek',
-    })
+    return Array.from(jobsMap.values())
   }
-
-  // Log filter statistics
-  console.log(`📊 Filter Results:`)
-  console.log(`  ✅ Passed: ${jobsMap.size} jobs`)
-  console.log(`  🚫 Agency filtered: ${filteredByAgency}`)
-  console.log(`  🏢 Private advertiser filtered: ${filteredByPrivate}`)
-  console.log(`  📝 Unwanted phrases filtered: ${filteredByPhrases}`)
-  console.log(`  ❓ No company name: ${noCompanyName}`)
-  console.log(`  ⚠️ Invalid website: ${invalidWebsiteCount}`)
-
-  if (filteredByAgency > 0) {
-    addLog(`🚫 Filtered out ${filteredByAgency} recruitment agencies`)
-  }
-  if (filteredByPrivate > 0) {
-    addLog(`🏢 Filtered out ${filteredByPrivate} private advertisers`)
-  }
-  if (filteredByPhrases > 0) {
-    addLog(`📝 Filtered out ${filteredByPhrases} jobs with unwanted phrases`)
-  }
-  if (invalidWebsiteCount > 0) {
-    addLog(`⚠️ ${invalidWebsiteCount} jobs had missing company websites (still included)`)
-  }
-
-  return Array.from(jobsMap.values())
-}
 
   const performSearch = useCallback(
     async (
@@ -223,6 +223,7 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
       maxResults: number,
       skipPages: number = 0,
       minAgeDays: number = 0,
+      salesOnlyFilter: boolean = true,
       offset: number = 0,
       isLoadMore: boolean = false
     ) => {
@@ -241,6 +242,7 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
         addLog(`🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`)
         addLog(`📍 Location: ${city === 'Australia' ? 'All Australia' : city}`)
         addLog(`📊 Requesting up to ${maxResults} results per job title`)
+        addLog(`📂 Sales Only filter: ${salesOnlyFilter ? 'ON (only showing Sales jobs)' : 'OFF (showing all jobs)'}`)
 
         if (skipPages > 0) {
           addLog(`⏩ Skip mode: skipping first ${skipPages} pages (~${skipPages * 20} newest jobs)`)
@@ -248,9 +250,6 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
         }
         if (minAgeDays > 0) {
           addLog(`📅 Date filter: fetching jobs posted in the last ${minAgeDays} days`)
-        }
-        if (skipPages === 0 && minAgeDays === 0) {
-          addLog(`📄 No filters — fetching newest jobs from page 1`)
         }
       } else {
         addLog(`🔄 Loading more results...`)
@@ -301,13 +300,13 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
 
         addLog(`📦 Total raw results: ${allRawJobs.length} — now processing & filtering...`)
 
-        const processedJobs = processJobs(allRawJobs, minAgeDays)
+        const processedJobs = processJobs(allRawJobs, minAgeDays, salesOnlyFilter)
 
         if (!isLoadMore) {
           setJobs(processedJobs)
           setHasMore(processedJobs.length >= maxResults * jobTitles.length)
           setCurrentOffset(offset + maxResults)
-          setLastSearchParams({ jobTitles, city, maxResults, skipPages, minAgeDays })
+          setLastSearchParams({ jobTitles, city, maxResults, skipPages, minAgeDays, salesOnly: salesOnlyFilter })
 
           if (historyId) {
             await updateScraperHistory(historyId, {
@@ -351,9 +350,10 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
       city: string,
       maxResults: number,
       skipPages: number = 0,
-      minAgeDays: number = 0
+      minAgeDays: number = 0,
+      salesOnlyFilter: boolean = true
     ) => {
-      await performSearch(jobTitles, city, maxResults, skipPages, minAgeDays, 0, false)
+      await performSearch(jobTitles, city, maxResults, skipPages, minAgeDays, salesOnlyFilter, 0, false)
     },
     [performSearch]
   )
@@ -366,6 +366,7 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
         lastSearchParams.maxResults,
         lastSearchParams.skipPages,
         lastSearchParams.minAgeDays,
+        lastSearchParams.salesOnly,
         currentOffset,
         true
       )
@@ -383,6 +384,10 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
     setLastSearchParams(null)
   }, [])
 
+  const toggleSalesOnly = useCallback((value: boolean) => {
+    setSalesOnly(value)
+  }, [])
+
   return {
     isLoading,
     isLoadingMore,
@@ -393,9 +398,11 @@ if (job.numApplicants && job.numApplicants !== 'N/A') {
     totalJobs: jobs.length,
     itemsPerPage: 20,
     hasMore,
+    salesOnly,
     startScrape,
     loadMore,
     clearResults,
     setCurrentPage,
+    toggleSalesOnly,
   }
 }

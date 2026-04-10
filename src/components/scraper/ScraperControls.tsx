@@ -9,7 +9,7 @@ import { MultiSelect } from '@/components/ui/MultiSelect'
 import { CITIES, JOB_ROLES } from '@/utils/constants'
 
 interface ScraperControlsProps {
-  onStart: (jobTitles: string[], city: string, maxResults: number, skipPages: number, minAgeDays: number) => void
+  onStart: (jobTitles: string[], city: string, maxResults: number, skipPages: number, minAgeDays: number, salesOnly: boolean) => void
   onLoadMore?: () => void
   isLoading: boolean
   isLoadingMore?: boolean
@@ -51,6 +51,9 @@ export function ScraperControls({
   const [age21Enabled, setAge21Enabled] = useState(false)
   const [age30Enabled, setAge30Enabled] = useState(false)
 
+  // Sales Only filter
+  const [salesOnly, setSalesOnly] = useState(true)
+
   const handleSkipChange = (pages: number) => {
     setSkip0Enabled(pages === 0)
     setSkip5Enabled(pages === 5)
@@ -76,7 +79,7 @@ export function ScraperControls({
     const city = useCustomCity ? customCity : selectedCity
     if (jobTitles.length === 0 || !city.trim()) return
 
-    onStart(jobTitles, city.trim(), maxResultsPerRun, skipPages, minAgeDays)
+    onStart(jobTitles, city.trim(), maxResultsPerRun, skipPages, minAgeDays, salesOnly)
   }
 
   const handleAddCustomRole = () => {
@@ -378,15 +381,47 @@ export function ScraperControls({
             <p className="text-xs text-blue-600 dark:text-blue-400">{getAgeFilterDisplay()}</p>
           </div>
 
+          {/* NEW: Sales Only Toggle */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Job Classification Filter
+            </label>
+            <div className="flex gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="salesOnly"
+                  checked={salesOnly}
+                  onChange={() => setSalesOnly(true)}
+                />
+                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">✅ Sales Only</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="salesOnly"
+                  checked={!salesOnly}
+                  onChange={() => setSalesOnly(false)}
+                />
+                <span className="text-sm text-slate-600 dark:text-slate-400">📂 All Classifications</span>
+              </label>
+            </div>
+            <p className="text-xs text-slate-500">
+              {salesOnly 
+                ? '🔍 Only showing jobs with "Sales" in classification' 
+                : '📋 Showing all jobs regardless of classification'}
+            </p>
+          </div>
+
           {/* Info Box */}
           <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
-              <strong>How filters work with parseforge/seek-scraper:</strong>
+              <strong>How filters work with websift/seek-scraper:</strong>
               <br />• <strong>Skip pages</strong> — Starts from page X, skipping newer jobs
               <br />• <strong>Date range</strong> — Limits to jobs from last X days
-              <br />• Both filters are applied server-side by Seek BEFORE scraping
-              <br />• You only pay for jobs that match your criteria — no wasted credits!
+              <br />• <strong>Sales Only</strong> — Filters jobs by classification (applied after scraping)
+              <br />• Both server-side filters are applied BEFORE scraping to save credits
             </div>
           </div>
 
@@ -398,6 +433,7 @@ export function ScraperControls({
             <p>📊 Max Results: {maxResultsPerRun} per job title</p>
             <p>⏩ {getSkipPagesDisplay()}</p>
             <p>📅 {getAgeFilterDisplay()}</p>
+            <p>📂 {salesOnly ? 'Sales Only' : 'All Classifications'}</p>
           </div>
 
           {/* Always-active filters */}
@@ -406,6 +442,7 @@ export function ScraperControls({
             <p>• 🚫 No recruitment agencies</p>
             <p>• 📝 No "no agency" disclaimers</p>
             <p>• 🏢 No "Private Advertiser" listings</p>
+            {salesOnly && <p>• 📂 Only Sales classification jobs</p>}
           </div>
 
           <Button
@@ -443,6 +480,7 @@ export function ScraperControls({
             <p>📊 Limited to {maxResultsPerRun} results per job title to save API credits</p>
             <p>⏩ Skip pages to get older jobs</p>
             <p>📅 Date range limits to last 7/14/21/30 days</p>
+            <p>📂 Sales Only filter removes non-sales jobs from results</p>
           </div>
         </form>
       </CardBody>
