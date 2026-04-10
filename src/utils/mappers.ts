@@ -1,7 +1,6 @@
 // src/utils/mappers.ts
 import type { Lead, NewLead, MatchAssessment } from '@/types'
 
-// Convert DB snake_case row to TypeScript camelCase Lead
 export function dbRowToLead(row: Record<string, unknown>): Lead {
   return {
     id: row.id as string,
@@ -28,7 +27,7 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     applicantCount: (row.applicant_count as number) ?? null,
     opsComments: (row.ops_comments as string) ?? null,
     charlieFeedback: (row.charlie_feedback as string) ?? null,
-    status: row.status as Lead['status'],
+    status: (row.status as Lead['status']) || 'Not Sent',
     enrichmentStatus: row.enrichment_status as Lead['enrichmentStatus'],
     emailSent: (row.email_sent as boolean) ?? false,
     emailSentAt: (row.email_sent_at as string) ?? null,
@@ -55,16 +54,16 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     country: (row.country as string) ?? null,
     isVerified: (row.is_verified as boolean) ?? false,
     matchAssessment: (row.match_assessment as MatchAssessment) ?? null,
+    response: (row.response as Lead['response']) ?? null,
   }
 }
 
-// Convert camelCase NewLead to DB snake_case object
 export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
   return {
     date_posted: lead.datePosted,
     job_ad_url: lead.jobAdUrl,
     platform: lead.platform,
-    city: lead.city,
+    city: lead.city ?? null,
     company_name: lead.companyName,
     job_title: lead.jobTitle,
     contact_name: lead.contactName ?? null,
@@ -82,7 +81,7 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     applicant_count: lead.applicantCount ?? null,
     ops_comments: lead.opsComments ?? null,
     charlie_feedback: lead.charlieFeedback ?? null,
-    status: lead.status ?? 'new',
+    status: lead.status ?? 'Not Sent',
     enrichment_status: lead.enrichmentStatus ?? 'pending',
     follow_up_required: lead.followUpRequired ?? false,
     raw_scrape_data: lead.rawScrapeData ?? null,
@@ -107,10 +106,10 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     country: lead.country ?? null,
     is_verified: lead.isVerified ?? false,
     match_assessment: lead.matchAssessment ?? null,
+    response: lead.response ?? null,  // NEW
   }
 }
 
-// Convert partial Lead updates to DB snake_case
 export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unknown> {
   const dbRow: Record<string, unknown> = {}
 
@@ -162,6 +161,7 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.country !== undefined) dbRow.country = updates.country
   if (updates.isVerified !== undefined) dbRow.is_verified = updates.isVerified
   if (updates.matchAssessment !== undefined) dbRow.match_assessment = updates.matchAssessment
+  if (updates.response !== undefined) dbRow.response = updates.response  // NEW
 
   dbRow.updated_at = new Date().toISOString()
 

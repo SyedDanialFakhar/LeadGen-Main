@@ -16,7 +16,6 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
     query = query.eq('platform', filters.platform)
   }
   
-  // UPDATED: City filter with substring matching (ilike with wildcards)
   if (filters?.city && filters.city !== 'all') {
     query = query.ilike('city', `%${filters.city}%`)
   }
@@ -24,31 +23,40 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   if (filters?.status && filters.status !== 'all') {
     query = query.eq('status', filters.status)
   }
+  
   if (filters?.enrichmentStatus && filters.enrichmentStatus !== 'all') {
     query = query.eq('enrichment_status', filters.enrichmentStatus)
   }
+  
   if (filters?.followUpOnly) {
     query = query.eq('follow_up_required', true)
   }
+  
   if (filters?.dateFrom) {
     query = query.gte('date_posted', filters.dateFrom)
   }
+  
   if (filters?.dateTo) {
     query = query.lte('date_posted', filters.dateTo)
   }
+  
   if (filters?.search) {
     query = query.or(
       `company_name.ilike.%${filters.search}%,contact_name.ilike.%${filters.search}%,job_title.ilike.%${filters.search}%`
     )
   }
   
-  // NEW: Match assessment filter
   if (filters?.matchAssessment && filters.matchAssessment !== 'all') {
     if (filters.matchAssessment === 'null') {
       query = query.is('match_assessment', null)
     } else {
       query = query.eq('match_assessment', filters.matchAssessment)
     }
+  }
+  
+  // NEW: Response filter
+  if (filters?.response && filters.response !== 'all') {
+    query = query.eq('response', filters.response)
   }
 
   const { data, error } = await query
@@ -70,15 +78,11 @@ export async function getLead(id: string): Promise<Lead> {
   return dbRowToLead(data)
 }
 
-// src/services/leadsService.ts
-
 export async function createLeads(leads: NewLead[]): Promise<Lead[]> {
   if (leads.length === 0) return []
   
-  // Extract all job URLs from the new leads
   const jobUrls = leads.map(lead => lead.jobAdUrl)
   
-  // Check which URLs already exist in the database
   const { data: existingLeads, error: fetchError } = await supabase
     .from('leads')
     .select('job_ad_url')
@@ -88,22 +92,18 @@ export async function createLeads(leads: NewLead[]): Promise<Lead[]> {
   
   const existingUrls = new Set(existingLeads?.map(lead => lead.job_ad_url) || [])
   
-  // Filter out leads that already exist (keep only NEW ones)
   const newLeadsToInsert = leads.filter(lead => !existingUrls.has(lead.jobAdUrl))
   const duplicateCount = leads.length - newLeadsToInsert.length
   
-  // Log duplicates for debugging (optional)
   if (duplicateCount > 0) {
     console.log(`Skipping ${duplicateCount} duplicate lead(s) - already in database`)
   }
   
-  // If no new leads, return empty array
   if (newLeadsToInsert.length === 0) {
     console.log('All leads already exist, nothing to insert')
     return []
   }
   
-  // Prepare rows for insertion
   const rows = newLeadsToInsert.map(newLeadToDbRow)
   const now = new Date().toISOString()
   rows.forEach(row => {
@@ -111,7 +111,6 @@ export async function createLeads(leads: NewLead[]): Promise<Lead[]> {
     row.updated_at = now
   })
   
-  // Insert only the new leads
   const { data, error } = await supabase
     .from('leads')
     .insert(rows)
@@ -180,7 +179,7 @@ export async function getLeadStats(): Promise<LeadStats> {
   return {
     total: leads.filter((l) => l.status !== 'deleted').length,
     newToday: leads.filter(
-      (l) => l.created_at?.startsWith(today) && l.status === 'new'
+      (l) => l.created_at?.startsWith(today) && l.status === 'Not Sent'
     ).length,
     awaitingEnrichment: leads.filter(
       (l) => l.enrichment_status === 'pending' && l.status !== 'deleted'

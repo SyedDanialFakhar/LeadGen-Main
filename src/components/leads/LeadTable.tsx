@@ -1,6 +1,6 @@
 // src/components/leads/LeadTable.tsx
 import { useState, useRef, useEffect } from 'react'
-import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users } from 'lucide-react'
+import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users, ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
 import { LeadStatusBadge, EnrichmentBadge, PlatformBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -20,6 +20,9 @@ interface LeadTableProps {
 
 const PAGE_SIZE = 20
 
+// Response types
+type ResponseStatus = 'positive' | 'negative' | 'none'
+
 // Match assessment styles
 const MATCH_ASSESSMENT_STYLES: Record<MatchAssessment, string> = {
   High: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
@@ -31,6 +34,27 @@ const MATCH_ASSESSMENT_ICONS: Record<MatchAssessment, string> = {
   High: '🔥',
   Medium: '📊',
   Low: '⚠️',
+}
+
+// Email status styles with colors
+const getEmailStatusStyle = (status: string): string => {
+  switch (status) {
+    case 'Not Sent': return 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400'
+    case 'Email 1': return 'bg-emerald-500 text-white shadow-sm'
+    case 'Email 2': return 'bg-blue-500 text-white shadow-sm'
+    case 'Email 3': return 'bg-purple-500 text-white shadow-sm'
+    default: return 'bg-slate-100 dark:bg-slate-700/50 text-slate-500'
+  }
+}
+
+// Response styles
+const getResponseStyle = (response: ResponseStatus): string => {
+  switch (response) {
+    case 'positive': return 'bg-emerald-500 text-white shadow-sm'
+    case 'negative': return 'bg-red-500 text-white shadow-sm'
+    case 'none': return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+    default: return 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+  }
 }
 
 export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
@@ -142,8 +166,22 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     )
   }
 
-  const handleBulkStatus = (status: LeadStatus) => {
-    bulkUpdateStatus({ ids: selected, status })
+  const handleBulkEmailStatus = (status: LeadStatus) => {
+    for (const id of selected) {
+      updateLead({ id, updates: { status } })
+    }
+    setSelected([])
+  }
+
+  const handleBulkResponse = (response: ResponseStatus) => {
+    for (const id of selected) {
+      const lead = leads.find(l => l.id === id)
+      if (lead) {
+        const cleanComments = (lead.opsComments || '').replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '')
+        const responseText = response !== 'none' ? `[Response: ${response}] ${cleanComments}` : cleanComments
+        updateLead({ id, updates: { opsComments: responseText.trim() || null } })
+      }
+    }
     setSelected([])
   }
 
@@ -182,6 +220,22 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  // Helper to extract response from opsComments
+  const getResponseFromComments = (comments: string | null): ResponseStatus => {
+    if (!comments) return 'none'
+    const match = comments.match(/\[Response:\s*(positive|negative|none)\]/i)
+    if (match) {
+      return match[1].toLowerCase() as ResponseStatus
+    }
+    return 'none'
+  }
+
+  // Get clean comments without response tag
+  const getCleanComments = (comments: string | null): string => {
+    if (!comments) return ''
+    return comments.replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '')
   }
 
   if (isLoading) {
@@ -271,16 +325,58 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             {selected.length} selected
           </span>
           <div className="flex items-center gap-2 ml-auto">
-            {([ 'called', 'converted', 'closed'] as LeadStatus[]).map((s) => (
-              <Button
-                key={s}
-                variant="outline"
-                size="sm"
-                onClick={() => handleBulkStatus(s)}
-              >
-                Mark {s}
-              </Button>
-            ))}
+            <span className="text-xs text-slate-500 mr-1">Email Status:</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkEmailStatus('Email 1')}
+              className="border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+            >
+              Email 1
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkEmailStatus('Email 2')}
+              className="border-blue-200 text-blue-600 hover:bg-blue-50"
+            >
+              Email 2
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkEmailStatus('Email 3')}
+              className="border-purple-200 text-purple-600 hover:bg-purple-50"
+            >
+              Email 3
+            </Button>
+            <span className="text-xs text-slate-500 ml-2 mr-1">Response:</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkResponse('positive')}
+              className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+            >
+              <ThumbsUp className="w-3 h-3 mr-1" />
+              Positive
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkResponse('negative')}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <ThumbsDown className="w-3 h-3 mr-1" />
+              Negative
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBulkResponse('none')}
+            >
+              <Minus className="w-3 h-3 mr-1" />
+              Clear
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -325,7 +421,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">LinkedIn</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Company URL</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Match Assessment</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Email Status</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Response</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ops Comments</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Charlie's Feedback</th>
               <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
@@ -333,6 +430,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
             {paginated.map((lead) => {
+              const response = getResponseFromComments(lead.opsComments)
+              
               return (
                 <tr
                   key={lead.id}
@@ -496,15 +595,53 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  <td className="px-3 py-3">
-                    <LeadStatusBadge status={lead.status} />
-                  </td>
+                  {/* Email Status Column - Colored Dropdown */}
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={lead.status}
+                      onChange={(e) => {
+                        updateLead({ id: lead.id, updates: { status: e.target.value as LeadStatus } })
+                      }}
+                      className={cn(
+                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium",
+                        getEmailStatusStyle(lead.status)
+                      )}
+                    >
+                      <option value="Not Sent">📧 Not Sent</option>
+                      <option value="Email 1">📧 Email 1 Sent</option>
+                      <option value="Email 2">📧 Email 2 Sent</option>
+                      <option value="Email 3">📧 Email 3 Sent</option>
+                    </select>
+                   </td>
+                  
+                  {/* Response Column - Dropdown with colors */}
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={response}
+                      onChange={(e) => {
+                        const newResponse = e.target.value as ResponseStatus
+                        const cleanComments = getCleanComments(lead.opsComments)
+                        const responseText = newResponse !== 'none' ? `[Response: ${newResponse}] ${cleanComments}` : cleanComments
+                        updateLead({ id: lead.id, updates: { opsComments: responseText.trim() || null } })
+                      }}
+                      className={cn(
+                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium",
+                        getResponseStyle(response)
+                      )}
+                    >
+                      <option value="none">⚪ None</option>
+                      <option value="positive">👍 Positive</option>
+                      <option value="negative">👎 Negative</option>
+                    </select>
+                   </td>
+                  
+                  {/* Ops Comments - Clean display without response tag */}
                   <td className="px-3 py-3 max-w-[200px]">
-                    {renderEditableCell(lead.id, 'opsComments', lead.opsComments, 'Click to add comment', 'text')}
-                  </td>
+                    {renderEditableCell(lead.id, 'opsComments', getCleanComments(lead.opsComments), 'Click to add comment', 'text')}
+                   </td>
                   <td className="px-3 py-3 max-w-[200px]">
                     {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', 'text')}
-                  </td>
+                   </td>
                   
                   <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
@@ -514,8 +651,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </td>
-                </tr>
+                   </td>
+                 </tr>
               )
             })}
           </tbody>

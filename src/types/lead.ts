@@ -1,11 +1,11 @@
 // src/types/lead.ts
-export type LeadStatus =
-  | 'new'
-  // | 'assessed'
-  | 'called'
-  | 'converted'
-  | 'closed'
-  | 'deleted'
+
+// Simplified - ONLY email statuses
+export type LeadStatus = 
+  | 'Not Sent'
+  | 'Email 1'
+  | 'Email 2'
+  | 'Email 3'
 
 export type EnrichmentStatus =
   | 'pending'
@@ -18,6 +18,8 @@ export type Platform = 'seek' | 'linkedin'
 export type City = string
 
 export type MatchAssessment = 'Low' | 'Medium' | 'High'
+
+export type ResponseStatus = 'positive' | 'negative' | 'none'
 
 export interface Lead {
   id: string
@@ -54,7 +56,6 @@ export interface Lead {
   extractedPhones?: string[]
   extractedContactName?: string | null
   
-  // New fields from enhanced scraper
   companyId: string | null
   companyIndustry: string | null
   companySize: string | null
@@ -72,9 +73,10 @@ export interface Lead {
   state: string | null
   country: string | null
   isVerified: boolean
-  
-  // Manual match assessment
   matchAssessment: MatchAssessment | null
+  
+  // NEW: Response column
+  response: ResponseStatus | null
 }
 
 export interface NewLead {
@@ -108,8 +110,6 @@ export interface NewLead {
   extractedEmails?: string[]
   extractedPhones?: string[]
   extractedContactName?: string | null
-  
-  // New fields
   companyId?: string | null
   companyIndustry?: string | null
   companySize?: string | null
@@ -127,9 +127,8 @@ export interface NewLead {
   state?: string | null
   country?: string | null
   isVerified?: boolean
-  
-  // Manual match assessment
   matchAssessment?: MatchAssessment | null
+  response?: ResponseStatus | null  // NEW
 }
 
 export interface LeadFilters {
@@ -142,6 +141,7 @@ export interface LeadFilters {
   dateFrom?: string
   dateTo?: string
   matchAssessment?: MatchAssessment | 'all' | 'null' | null
+  response?: ResponseStatus | 'all' | null
 }
 
 export interface LeadStats {

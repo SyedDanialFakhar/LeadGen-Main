@@ -15,6 +15,7 @@ const defaultFilters: LeadFilters = {
   enrichmentStatus: 'all',
   followUpOnly: false,
   search: '',
+  response: 'all',  
 }
 
 export const useFilters = create<FiltersStore>((set) => ({

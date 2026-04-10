@@ -39,7 +39,8 @@ export function useLeads(filters?: LeadFilters) {
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Lead> }) =>
       updateLead(id, updates),
     onSuccess: () => {
-      invalidate()
+      // Force refetch to ensure UI updates
+      queryClient.refetchQueries({ queryKey: [LEADS_KEY] })
       showToast('Lead updated successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
