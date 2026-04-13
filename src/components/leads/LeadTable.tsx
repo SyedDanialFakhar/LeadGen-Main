@@ -1,6 +1,6 @@
 // src/components/leads/LeadTable.tsx
 import { useState, useRef, useEffect } from 'react'
-import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users, ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users, ThumbsUp, ThumbsDown, Minus, RefreshCw } from 'lucide-react'
 import { LeadStatusBadge, EnrichmentBadge, PlatformBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -70,6 +70,9 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   
   // Bulk delete modal state
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  
+  // Enrichment state
+  const [isEnriching, setIsEnriching] = useState(false)
   
   // Single editing state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -185,6 +188,50 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     setSelected([])
   }
 
+  const handleEnrichSelected = async () => {
+    if (selected.length === 0) {
+      alert('No leads selected')
+      return
+    }
+    
+    setIsEnriching(true)
+    try {
+      const selectedLeads = leads.filter(l => selected.includes(l.id))
+      const companiesToEnrich = selectedLeads.map(lead => ({
+        id: lead.id,
+        name: lead.companyName,
+        city: lead.city
+      }))
+      
+      const enrichedData = await enrichMultipleCompanies(companiesToEnrich)
+      
+      let enrichedCount = 0
+      for (const lead of selectedLeads) {
+        const enriched = enrichedData.get(lead.id)
+        if (enriched && enriched.website && !lead.companyWebsite) {
+          updateLead({ id: lead.id, updates: { companyWebsite: enriched.website } })
+          enrichedCount++
+        }
+        if (enriched && enriched.linkedinUrl && !lead.contactLinkedinUrl) {
+          updateLead({ id: lead.id, updates: { contactLinkedinUrl: enriched.linkedinUrl } })
+          enrichedCount++
+        }
+      }
+      
+      if (enrichedCount > 0) {
+        alert(`Enriched ${enrichedCount} lead(s) with website/LinkedIn data`)
+      } else {
+        alert('No new data found for selected leads')
+      }
+      setSelected([])
+    } catch (err) {
+      console.error('Failed to enrich leads:', err)
+      alert('Failed to enrich leads')
+    } finally {
+      setIsEnriching(false)
+    }
+  }
+
   const handleDeleteClick = (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation()
     setLeadToDelete(lead)
@@ -265,7 +312,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     
     if (isEditing) {
       return (
-        <div className="flex items-center gap-1 min-w-[160px]">
+        <div className="flex items-center gap-1 min-w-[200px]">
           <input
             ref={inputRef}
             type={inputType}
@@ -301,7 +348,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
 
     return (
       <div
-        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors min-w-[80px]"
+        className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors min-w-[100px]"
         onClick={(e) => {
           e.stopPropagation()
           startEdit(leadId, field, displayValue)
@@ -375,6 +422,18 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             >
               <Minus className="w-3 h-3 mr-1" />
               Clear
+            </Button>
+            {/* Enrich Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleEnrichSelected}
+              isLoading={isEnriching}
+              leftIcon={<Building2 className="w-4 h-4" />}
+              disabled={selected.length === 0}
+              className="border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+            >
+              Enrich ({selected.length})
             </Button>
             <Button
               variant="outline"
@@ -496,24 +555,33 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  <td className="px-3 py-3">
+                  {/* Contact Name - Fixed width */}
+                  <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'contactName', lead.contactName, 'Click to add', 'text')}
                   </td>
-                  <td className="px-3 py-3">
+                  
+                  {/* Role Title - Fixed width */}
+                  <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'contactRole', lead.contactJobTitle, 'Click to add', 'text')}
                   </td>
-                  <td className="px-3 py-3">
+                  
+                  {/* Phone - Fixed width */}
+                  <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'phone', lead.contactPhone, 'Click to add', 'tel')}
                   </td>
-                  <td className="px-3 py-3">
+                  
+                  {/* Email - Fixed width */}
+                  <td className="px-3 py-3 min-w-[150px]">
                     {renderEditableCell(lead.id, 'email', lead.contactEmail, 'Click to add', 'email')}
                   </td>
-                  <td className="px-3 py-3">
+                  
+                  {/* LinkedIn - Fixed width */}
+                  <td className="px-3 py-3 min-w-[150px]">
                     {renderEditableCell(lead.id, 'linkedin', lead.contactLinkedinUrl, 'Click to add', 'url')}
                   </td>
                   
                   {/* Company URL */}
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 min-w-[120px]">
                     {lead.companyWebsite ? (
                       <a
                         href={lead.companyWebsite}
@@ -534,7 +602,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   </td>
                   
                   {/* Match Assessment Column */}
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3 min-w-[100px]" onClick={(e) => e.stopPropagation()}>
                     {editingId === lead.id && editingField === 'matchAssessment' ? (
                       <div className="flex items-center gap-1 min-w-[140px]">
                         <select
@@ -595,14 +663,14 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   </td>
                   
                   {/* Email Status Column */}
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3 min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                     <select
                       value={lead.status}
                       onChange={(e) => {
                         updateLead({ id: lead.id, updates: { status: e.target.value as LeadStatus } })
                       }}
                       className={cn(
-                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium",
+                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full",
                         getEmailStatusStyle(lead.status)
                       )}
                     >
@@ -614,7 +682,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                    </td>
                   
                   {/* Response Column */}
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3 min-w-[110px]" onClick={(e) => e.stopPropagation()}>
                     <select
                       value={response}
                       onChange={(e) => {
@@ -624,7 +692,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                         updateLead({ id: lead.id, updates: { opsComments: responseText.trim() || null } })
                       }}
                       className={cn(
-                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium",
+                        "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full",
                         getResponseStyle(response)
                       )}
                     >
@@ -635,12 +703,12 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                    </td>
                   
                   {/* Ops Comments */}
-                  <td className="px-3 py-3 max-w-[200px]">
+                  <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'opsComments', getCleanComments(lead.opsComments), 'Click to add comment', 'text')}
                    </td>
                   
                   {/* Charlie's Feedback */}
-                  <td className="px-3 py-3 max-w-[200px]">
+                  <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', 'text')}
                    </td>
                   
@@ -692,7 +760,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         </div>
       )}
 
-      {/* Delete Modals - same as before */}
+      {/* Single Delete Confirmation Modal */}
       <Modal
         isOpen={deleteModalOpen}
         onClose={() => !isDeleting && setDeleteModalOpen(false)}
@@ -722,6 +790,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         </div>
       </Modal>
 
+      {/* Bulk Delete Confirmation Modal */}
       <Modal
         isOpen={bulkDeleteModalOpen}
         onClose={() => !isDeleting && setBulkDeleteModalOpen(false)}
