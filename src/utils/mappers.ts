@@ -10,6 +10,7 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     jobAdUrl: row.job_ad_url as string,
     platform: row.platform as Lead['platform'],
     city: row.city as Lead['city'],
+    location: (row.location as string) ?? null,  // ADD THIS
     companyName: row.company_name as string,
     jobTitle: row.job_title as string,
     contactName: (row.contact_name as string) ?? null,
@@ -64,6 +65,7 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     job_ad_url: lead.jobAdUrl,
     platform: lead.platform,
     city: lead.city ?? null,
+    location: lead.location ?? null,  
     company_name: lead.companyName,
     job_title: lead.jobTitle,
     contact_name: lead.contactName ?? null,
@@ -117,6 +119,7 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.jobAdUrl !== undefined) dbRow.job_ad_url = updates.jobAdUrl
   if (updates.platform !== undefined) dbRow.platform = updates.platform
   if (updates.city !== undefined) dbRow.city = updates.city
+  if (updates.location !== undefined) dbRow.location = updates.location
   if (updates.companyName !== undefined) dbRow.company_name = updates.companyName
   if (updates.jobTitle !== undefined) dbRow.job_title = updates.jobTitle
   if (updates.contactName !== undefined) dbRow.contact_name = updates.contactName

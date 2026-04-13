@@ -39,7 +39,6 @@ export function useLeads(filters?: LeadFilters) {
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Lead> }) =>
       updateLead(id, updates),
     onSuccess: () => {
-      // Force refetch to ensure UI updates
       queryClient.refetchQueries({ queryKey: [LEADS_KEY] })
       showToast('Lead updated successfully', 'success')
     },
@@ -90,6 +89,23 @@ export function useLeads(filters?: LeadFilters) {
     onError: (err: Error) => showToast(err.message, 'error'),
   })
 
+  // Bulk update for enrichment
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async (updates: Array<{ id: string; updates: Partial<Lead> }>) => {
+      const results = []
+      for (const item of updates) {
+        const result = await updateLead(item.id, item.updates)
+        results.push(result)
+      }
+      return results
+    },
+    onSuccess: () => {
+      invalidate()
+      showToast('Leads enriched successfully', 'success')
+    },
+    onError: (err: Error) => showToast(err.message, 'error'),
+  })
+
   return {
     leads: leadsQuery.data ?? [],
     isLoading: leadsQuery.isLoading,
@@ -99,10 +115,12 @@ export function useLeads(filters?: LeadFilters) {
     updateLead: updateMutation.mutate,
     deleteLead: deleteMutation.mutate,
     bulkUpdateStatus: bulkStatusMutation.mutate,
+    bulkUpdate: bulkUpdateMutation.mutate,
     createLeads: createMutation.mutate,
     isUpdating: updateMutation.isPending,
     isDeleting: deleteMutation.isPending,
     isCreating: createMutation.isPending,
+    isBulkUpdating: bulkUpdateMutation.isPending,
     exportToCSV: () => exportLeadsToCSV(filters),
     getLead,
   }

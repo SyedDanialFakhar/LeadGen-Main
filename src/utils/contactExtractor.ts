@@ -101,6 +101,68 @@ export function hasUnwantedPhrases(description: string): boolean {
 }
 
 /**
+ * Detect recruiter-style intros like "Our client..." or "We have partnered..."
+ */
+export function hasRecruitmentIntro(description: string): boolean {
+  const intro = description.toLowerCase().trim().slice(0, 220)
+  const recruitmentIntroPatterns = [
+    /^our client\b/,
+    /^we have partnered\b/,
+    /^we've partnered\b/,
+    /^we are partnered\b/,
+    /^on behalf of (our )?client\b/,
+  ]
+
+  return recruitmentIntroPatterns.some((pattern) => pattern.test(intro))
+}
+
+/**
+ * Basic website/domain signal for recruitment businesses.
+ */
+export function isRecruitmentWebsite(website: string): boolean {
+  const lowerWebsite = website.toLowerCase()
+  const recruitmentWebsiteKeywords = [
+    'recruit',
+    'recruitment',
+    'staffing',
+    'talent',
+    'labourhire',
+    'labour-hire',
+    'employment-agency',
+    'employmentagency',
+    'headhunt',
+  ]
+
+  return recruitmentWebsiteKeywords.some((keyword) => lowerWebsite.includes(keyword))
+}
+
+/**
+ * Detect legal/law firms so they can be excluded.
+ */
+export function isLawFirmRelated(
+  companyName: string,
+  jobTitle: string,
+  description: string,
+  website?: string | null
+): boolean {
+  const combined = `${companyName} ${jobTitle} ${description.slice(0, 400)} ${website || ''}`.toLowerCase()
+  const lawRegexes = [
+    /\blaw\s?firm\b/,
+    /\bsolicitor(s)?\b/,
+    /\battorney(s)?\b/,
+    /\bbarrister(s)?\b/,
+    /\blegal practice\b/,
+    /\blitigation\b/,
+    /\bconveyancing\b/,
+    /\bfamily law\b/,
+    /\bcorporate law\b/,
+    /\bimmigration law\b/,
+  ]
+
+  return lawRegexes.some((pattern) => pattern.test(combined))
+}
+
+/**
  * Check if company is a private advertiser
  */
 export function isPrivateAdvertiser(advertiserName?: string, isPrivate?: boolean): boolean {

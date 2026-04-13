@@ -1,6 +1,6 @@
 // src/components/ui/Badge.tsx
 import { cn } from '@/utils/cn'
-import type { LeadStatus, EnrichmentStatus } from '@/types'
+import type { LeadStatus, EnrichmentStatus, Platform, MatchAssessment } from '@/types'
 
 interface BadgeProps {
   children: React.ReactNode
@@ -10,6 +10,7 @@ interface BadgeProps {
     | 'warning'
     | 'danger'
     | 'info'
+    | 'purple'
     | 'muted'
   className?: string
 }
@@ -20,6 +21,7 @@ const variants = {
   warning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
   danger: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   info: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+  purple: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
   muted: 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
 }
 
@@ -37,8 +39,14 @@ export function Badge({ children, variant = 'default', className }: BadgeProps) 
   )
 }
 
-// Lead status specific badge
+// Lead status specific badge - UPDATED for new email statuses
 const statusConfig: Record<LeadStatus, { label: string; variant: BadgeProps['variant']; extra?: string }> = {
+  // New email statuses
+  'Not Sent': { label: '📧 Not Sent', variant: 'default' },
+  'Email 1': { label: '📧 Email 1 Sent', variant: 'info' },
+  'Email 2': { label: '📧 Email 2 Sent', variant: 'purple' },
+  'Email 3': { label: '📧 Email 3 Sent', variant: 'success' },
+  // Keep old statuses for backward compatibility (in case any exist)
   new: { label: 'New', variant: 'default' },
   assessed: { label: 'Assessed', variant: 'info' },
   called: { label: 'Called', variant: 'warning' },
@@ -54,6 +62,14 @@ interface LeadStatusBadgeProps {
 
 export function LeadStatusBadge({ status, className }: LeadStatusBadgeProps) {
   const config = statusConfig[status]
+  // Fallback for any unknown status
+  if (!config) {
+    return (
+      <Badge variant="default" className={className}>
+        {String(status)}
+      </Badge>
+    )
+  }
   return (
     <Badge
       variant={config.variant}
@@ -99,6 +115,35 @@ export function PlatformBadge({ platform, className }: PlatformBadgeProps) {
       className={className}
     >
       {platform === 'seek' ? 'Seek' : 'LinkedIn'}
+    </Badge>
+  )
+}
+
+// Match Assessment Badge - NEW
+interface MatchAssessmentBadgeProps {
+  assessment: MatchAssessment | null
+  className?: string
+}
+
+export function MatchAssessmentBadge({ assessment, className }: MatchAssessmentBadgeProps) {
+  if (!assessment) {
+    return (
+      <Badge variant="default" className={className}>
+        Not Set
+      </Badge>
+    )
+  }
+  
+  const assessmentConfig: Record<MatchAssessment, { label: string; variant: BadgeProps['variant'] }> = {
+    High: { label: '🔥 High', variant: 'success' },
+    Medium: { label: '📊 Medium', variant: 'warning' },
+    Low: { label: '⚠️ Low', variant: 'danger' },
+  }
+  
+  const config = assessmentConfig[assessment]
+  return (
+    <Badge variant={config.variant} className={className}>
+      {config.label}
     </Badge>
   )
 }

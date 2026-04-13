@@ -29,6 +29,7 @@ export interface Lead {
   jobAdUrl: string
   platform: Platform
   city: City
+  location: string | null  
   companyName: string
   jobTitle: string
   contactName: string | null
@@ -84,6 +85,7 @@ export interface NewLead {
   jobAdUrl: string
   platform: Platform
   city: City | null  
+  location?: string | null 
   companyName: string
   jobTitle: string
   contactName?: string | null

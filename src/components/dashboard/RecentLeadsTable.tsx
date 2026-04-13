@@ -58,7 +58,7 @@ export function RecentLeadsTable({ leads, isLoading }: RecentLeadsTableProps) {
                       </th>
                     )
                   )}
-                </tr>
+                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {recent.map((lead) => (
@@ -69,23 +69,23 @@ export function RecentLeadsTable({ leads, isLoading }: RecentLeadsTableProps) {
                   >
                     <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200 max-w-[160px] truncate">
                       {lead.companyName}
-                    </td>
+                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400 max-w-[160px] truncate">
                       {lead.jobTitle}
-                    </td>
+                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
                       {lead.city}
-                    </td>
+                     </td>
                     <td className="px-4 py-3">
                       <PlatformBadge platform={lead.platform} />
-                    </td>
+                     </td>
                     <td className="px-4 py-3">
                       <LeadStatusBadge status={lead.status} />
-                    </td>
+                     </td>
                     <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                       {formatDate(lead.datePosted)}
-                    </td>
-                  </tr>
+                     </td>
+                   </tr>
                 ))}
               </tbody>
             </table>

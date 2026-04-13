@@ -5,6 +5,7 @@ import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { useFilters } from '@/hooks/useFilters'
 import { CITIES, PLATFORMS } from '@/utils/constants'
+import type { LeadStatus, ResponseFilter } from '@/types'
 
 export function LeadFilters() {
   const { filters, setFilter, clearFilters } = useFilters()
@@ -12,9 +13,9 @@ export function LeadFilters() {
   const hasActiveFilters =
     filters.platform !== 'all' ||
     filters.city !== 'all' ||
-    filters.status !== 'all' ||
+    (filters.status && filters.status !== 'all') ||
     filters.enrichmentStatus !== 'all' ||
-    // filters.followUpOnly ||
+    (filters.response && filters.response !== 'all') ||
     !!filters.search
 
   return (
@@ -43,7 +44,7 @@ export function LeadFilters() {
         containerClassName="min-w-[140px]"
       />
 
-      {/* City - Now uses ilike for substring matching */}
+      {/* City */}
       <Select
         value={filters.city ?? 'all'}
         onChange={(e) => setFilter('city', e.target.value as any)}
@@ -54,22 +55,34 @@ export function LeadFilters() {
         containerClassName="min-w-[140px]"
       />
 
-      {/* Status */}
+      {/* Email Status Filter - Updated with correct status values */}
       <Select
         value={filters.status ?? 'all'}
-        onChange={(e) => setFilter('status', e.target.value as any)}
+        onChange={(e) => setFilter('status', e.target.value as LeadStatus | 'all')}
         options={[
-          { value: 'all', label: 'All Statuses' },
-          { value: 'new', label: 'New' },
-          // { value: 'assessed', label: 'Assessed' },
-          { value: 'called', label: 'Called' },
-          { value: 'converted', label: 'Converted' },
-          { value: 'closed', label: 'Closed' },
+          { value: 'all', label: 'All Email Status' },
+          { value: 'Not Sent', label: '📧 Not Sent' },
+          { value: 'Email 1', label: '📧 Email 1 Sent' },
+          { value: 'Email 2', label: '📧 Email 2 Sent' },
+          { value: 'Email 3', label: '📧 Email 3 Sent' },
         ]}
-        containerClassName="min-w-[140px]"
+        containerClassName="min-w-[160px]"
       />
 
-      {/* Enrichment */}
+      {/* Response Filter */}
+      <Select
+        value={filters.response ?? 'all'}
+        onChange={(e) => setFilter('response', e.target.value as ResponseFilter | 'all')}
+        options={[
+          { value: 'all', label: 'All Responses' },
+          { value: 'positive', label: '👍 Positive' },
+          { value: 'negative', label: '👎 Negative' },
+          { value: 'none', label: '⚪ No Response' },
+        ]}
+        containerClassName="min-w-[150px]"
+      />
+
+      {/* Enrichment Status */}
       <Select
         value={filters.enrichmentStatus ?? 'all'}
         onChange={(e) => setFilter('enrichmentStatus', e.target.value as any)}
@@ -82,21 +95,6 @@ export function LeadFilters() {
         ]}
         containerClassName="min-w-[150px]"
       />
-
-      {/* Follow-up toggle */}
-      {/* <button
-        onClick={() => setFilter('followUpOnly', !filters.followUpOnly)}
-        className={`
-          px-3 py-2 rounded-lg text-sm font-medium border transition-colors
-          ${
-            filters.followUpOnly
-              ? 'bg-orange-500 text-white border-orange-500'
-              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
-          }
-        `}
-      >
-        Follow-up Only
-      </button> */}
 
       {/* Clear filters */}
       {hasActiveFilters && (

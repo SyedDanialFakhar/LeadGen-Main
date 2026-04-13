@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import type { Lead, LeadStatus, MatchAssessment } from '@/types'
 import { formatDate } from '@/utils/dateUtils'
 import { useLeads } from '@/hooks/useLeads'
+import { enrichMultipleCompanies } from '@/services/companyEnrichment'
 import { cn } from '@/utils/cn'
 
 interface LeadTableProps {
@@ -102,7 +103,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   }
 
   const handleSave = (leadId: string, field: string, newValue: string, originalVal: string) => {
-    // Only update if value changed
     if (newValue !== originalVal) {
       const updates: Partial<Lead> = {}
       
@@ -222,7 +222,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     }
   }
 
-  // Helper to extract response from opsComments
   const getResponseFromComments = (comments: string | null): ResponseStatus => {
     if (!comments) return 'none'
     const match = comments.match(/\[Response:\s*(positive|negative|none)\]/i)
@@ -232,7 +231,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     return 'none'
   }
 
-  // Get clean comments without response tag
   const getCleanComments = (comments: string | null): string => {
     if (!comments) return ''
     return comments.replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '')
@@ -255,6 +253,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     )
   }
 
+  // Fixed renderEditableCell with proper width to prevent overlap
   const renderEditableCell = (
     leadId: string,
     field: string,
@@ -266,7 +265,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     
     if (isEditing) {
       return (
-        <div className="flex items-center gap-1 min-w-[140px]">
+        <div className="flex items-center gap-1 min-w-[160px]">
           <input
             ref={inputRef}
             type={inputType}
@@ -283,7 +282,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               e.stopPropagation()
               handleSave(leadId, field, editingValue, originalValue)
             }}
-            className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 dark:hover:bg-green-900/20"
+            className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 dark:hover:bg-green-900/20 shrink-0"
           >
             <Check className="w-3.5 h-3.5" />
           </button>
@@ -292,7 +291,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               e.stopPropagation()
               cancelEdit()
             }}
-            className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+            className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -408,9 +407,9 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Lead Added</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Source</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">City</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Location</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Company Name</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Job Title</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Location</th>
               <th className="px-3 py-3 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Job Link</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date Posted</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Applicants</th>
@@ -459,14 +458,14 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   <td className="px-3 py-3 text-slate-600 dark:text-slate-400">
                     {lead.city}
                   </td>
+                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400 text-xs">
+                    {lead.location || lead.city}
+                  </td>
                   <td className="px-3 py-3 font-medium text-slate-800 dark:text-slate-200 max-w-[150px] truncate">
                     {lead.companyName}
                   </td>
                   <td className="px-3 py-3 text-slate-600 dark:text-slate-400 max-w-[180px] truncate">
                     {lead.jobTitle}
-                  </td>
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400">
-                    {lead.city}
                   </td>
                   <td className="px-3 py-3 text-center">
                     <a
@@ -513,7 +512,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     {renderEditableCell(lead.id, 'linkedin', lead.contactLinkedinUrl, 'Click to add', 'url')}
                   </td>
                   
-                  {/* Company URL - Non-editable clickable link */}
+                  {/* Company URL */}
                   <td className="px-3 py-3">
                     {lead.companyWebsite ? (
                       <a
@@ -537,13 +536,13 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   {/* Match Assessment Column */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                     {editingId === lead.id && editingField === 'matchAssessment' ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 min-w-[140px]">
                         <select
                           ref={inputRef as any}
                           value={editingValue}
                           onChange={(e) => setEditingValue(e.target.value)}
                           onBlur={() => handleSave(lead.id, 'matchAssessment', editingValue, originalValue)}
-                          className="px-2 py-1 text-xs rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="flex-1 px-2 py-1 text-xs rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           <option value="">Select...</option>
                           <option value="High">🔥 High Match</option>
@@ -555,7 +554,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                             e.stopPropagation()
                             handleSave(lead.id, 'matchAssessment', editingValue, originalValue)
                           }}
-                          className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50"
+                          className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 shrink-0"
                         >
                           <Check className="w-3.5 h-3.5" />
                         </button>
@@ -564,7 +563,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                             e.stopPropagation()
                             cancelEdit()
                           }}
-                          className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50"
+                          className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 shrink-0"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -595,7 +594,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  {/* Email Status Column - Colored Dropdown */}
+                  {/* Email Status Column */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                     <select
                       value={lead.status}
@@ -614,7 +613,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     </select>
                    </td>
                   
-                  {/* Response Column - Dropdown with colors */}
+                  {/* Response Column */}
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                     <select
                       value={response}
@@ -635,14 +634,17 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     </select>
                    </td>
                   
-                  {/* Ops Comments - Clean display without response tag */}
+                  {/* Ops Comments */}
                   <td className="px-3 py-3 max-w-[200px]">
                     {renderEditableCell(lead.id, 'opsComments', getCleanComments(lead.opsComments), 'Click to add comment', 'text')}
                    </td>
+                  
+                  {/* Charlie's Feedback */}
                   <td className="px-3 py-3 max-w-[200px]">
                     {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', 'text')}
                    </td>
                   
+                  {/* Actions */}
                   <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={(e) => handleDeleteClick(lead, e)}
@@ -651,8 +653,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                   </td>
-                 </tr>
+                  </td>
+                </tr>
               )
             })}
           </tbody>
@@ -690,7 +692,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         </div>
       )}
 
-      {/* Single Delete Confirmation Modal */}
+      {/* Delete Modals - same as before */}
       <Modal
         isOpen={deleteModalOpen}
         onClose={() => !isDeleting && setDeleteModalOpen(false)}
@@ -698,18 +700,10 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         size="sm"
         footer={
           <>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteModalOpen(false)}
-              disabled={isDeleting}
-            >
+            <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={isDeleting}>
               Cancel
             </Button>
-            <Button
-              onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
+            <Button onClick={handleConfirmDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 text-white">
               {isDeleting ? <Spinner size="sm" /> : 'Delete'}
             </Button>
           </>
@@ -718,23 +712,16 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         <div className="flex items-center gap-3 py-2">
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <div>
-            <p className="font-medium text-slate-800 dark:text-slate-200">
-              Are you sure you want to delete this lead?
-            </p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">Are you sure you want to delete this lead?</p>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Company: <span className="font-medium">{leadToDelete?.companyName}</span>
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Job: {leadToDelete?.jobTitle}
-            </p>
-            <p className="text-xs text-red-500 mt-2">
-              This action cannot be undone.
-            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Job: {leadToDelete?.jobTitle}</p>
+            <p className="text-xs text-red-500 mt-2">This action cannot be undone.</p>
           </div>
         </div>
       </Modal>
 
-      {/* Bulk Delete Confirmation Modal */}
       <Modal
         isOpen={bulkDeleteModalOpen}
         onClose={() => !isDeleting && setBulkDeleteModalOpen(false)}
@@ -742,18 +729,10 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         size="sm"
         footer={
           <>
-            <Button
-              variant="outline"
-              onClick={() => setBulkDeleteModalOpen(false)}
-              disabled={isDeleting}
-            >
+            <Button variant="outline" onClick={() => setBulkDeleteModalOpen(false)} disabled={isDeleting}>
               Cancel
             </Button>
-            <Button
-              onClick={handleConfirmBulkDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
+            <Button onClick={handleConfirmBulkDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700 text-white">
               {isDeleting ? <Spinner size="sm" /> : `Delete ${selected.length} Leads`}
             </Button>
           </>
@@ -762,12 +741,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         <div className="flex items-center gap-3 py-2">
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <div>
-            <p className="font-medium text-slate-800 dark:text-slate-200">
-              Are you sure you want to delete {selected.length} lead(s)?
-            </p>
-            <p className="text-xs text-red-500 mt-2">
-              This action cannot be undone. All data for these leads will be permanently removed.
-            </p>
+            <p className="font-medium text-slate-800 dark:text-slate-200">Are you sure you want to delete {selected.length} lead(s)?</p>
+            <p className="text-xs text-red-500 mt-2">This action cannot be undone.</p>
           </div>
         </div>
       </Modal>

@@ -7,6 +7,9 @@ import {
   extractContactName,
   isRecruitmentAgency,
   hasUnwantedPhrases,
+  hasRecruitmentIntro,
+  isRecruitmentWebsite,
+  isLawFirmRelated,
   isPrivateAdvertiser,
   isSalesJob,
 } from '@/utils/contactExtractor'
@@ -23,7 +26,7 @@ export function useScraper() {
   const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [currentOffset, setCurrentOffset] = useState(0)
-  const [salesOnly, setSalesOnly] = useState(true) // NEW: Default to only Sales jobs
+  const [salesOnly, setSalesOnly] = useState(true)
   const [lastSearchParams, setLastSearchParams] = useState<{
     jobTitles: string[]
     city: string
@@ -40,7 +43,9 @@ export function useScraper() {
   const processJobs = (rawResults: RawSeekJob[], minAgeDays: number = 0, filterSalesOnly: boolean = true): JobResult[] => {
     const jobsMap = new Map<string, JobResult>()
     let invalidWebsiteCount = 0
+    let filteredByWebsite = 0
     let filteredByAgency = 0
+    let filteredByLaw = 0
     let filteredByPrivate = 0
     let filteredByPhrases = 0
     let filteredBySales = 0
@@ -55,7 +60,7 @@ export function useScraper() {
       const classification = job.classificationInfo?.classification || job.classification || ''
       const subClassification = job.classificationInfo?.subClassification || job.subClassification || ''
       
-      // NEW: Sales filter - only keep jobs with "Sales" in classification
+      // Sales filter
       if (filterSalesOnly && !isSalesJob(classification)) {
         console.log(`  ❌ Filtered (not Sales): ${classification} - ${companyName}`)
         filteredBySales++
@@ -68,7 +73,12 @@ export function useScraper() {
         companyWebsite = job.companyProfile.website
       }
       
-      if (!companyWebsite) invalidWebsiteCount++
+      if (!companyWebsite) {
+        invalidWebsiteCount++
+        filteredByWebsite++
+        console.log(`  ❌ Filtered (missing website): ${companyName}`)
+        continue
+      }
       
       // Get company details
       const companyIndustry = job.companyProfile?.industry || null
@@ -78,11 +88,12 @@ export function useScraper() {
       const companyId = job.advertiser?.id || job.companyProfile?.id || null
       const isVerified = job.advertiser?.isVerified || job.isVerified || false
       
-      // Get location
-      const location = job.joblocationInfo?.displayLocation || job.location || 'Location not specified'
-      const state = job.joblocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
-      const country = job.joblocationInfo?.country || 'Australia'
-      const city = job.joblocationInfo?.suburb || job.joblocationInfo?.area || location.split(',')[0] || ''
+      // Get location - FIXED: extract full location and separate city
+      const jobLocationInfo = job.joblocationInfo
+      const fullLocation = jobLocationInfo?.displayLocation || job.location || 'Location not specified'
+      const state = jobLocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
+      const country = jobLocationInfo?.country || 'Australia'
+      const city = jobLocationInfo?.suburb || jobLocationInfo?.area || fullLocation.split(',')[0] || ''
       
       // Get description
       const description = job.content?.unEditedContent || job.content?.jobHook || ''
@@ -102,11 +113,32 @@ export function useScraper() {
         filteredByPhrases++
         continue
       }
+
+      // Recruitment-intro filter (e.g. "Our client", "We have partnered...")
+      if (hasRecruitmentIntro(description)) {
+        console.log(`  ❌ Filtered by recruitment intro phrase: ${companyName}`)
+        filteredByPhrases++
+        continue
+      }
       
       // Agency filter
       if (isRecruitmentAgency(companyName, advertiserName)) {
         console.log(`  ❌ Filtered as recruitment agency: ${companyName}`)
         filteredByAgency++
+        continue
+      }
+
+      // Website-based recruitment validation
+      if (isRecruitmentWebsite(companyWebsite)) {
+        console.log(`  ❌ Filtered as recruitment website: ${companyName} (${companyWebsite})`)
+        filteredByWebsite++
+        continue
+      }
+
+      // Exclude law/legal firms
+      if (isLawFirmRelated(companyName, job.title || '', description, companyWebsite)) {
+        console.log(`  ❌ Filtered as law/legal business: ${companyName}`)
+        filteredByLaw++
         continue
       }
       
@@ -181,6 +213,7 @@ export function useScraper() {
         datePostedRaw: datePostedRaw,
         expiresAt: job.expiresAtUtc || null,
         city: city,
+        location: fullLocation,  // ADD THIS - full location string
         state: state,
         country: country,
         workType: workType,
@@ -201,6 +234,8 @@ export function useScraper() {
     console.log(`📊 Filter Results:`)
     console.log(`  ✅ Passed: ${jobsMap.size} jobs`)
     console.log(`  🚫 Agency filtered: ${filteredByAgency}`)
+    console.log(`  🌐 Website filtered: ${filteredByWebsite}`)
+    console.log(`  ⚖️ Law/legal filtered: ${filteredByLaw}`)
     console.log(`  🏢 Private advertiser filtered: ${filteredByPrivate}`)
     console.log(`  📝 Unwanted phrases filtered: ${filteredByPhrases}`)
     console.log(`  📂 Non-Sales filtered: ${filteredBySales}`)
@@ -208,10 +243,12 @@ export function useScraper() {
     console.log(`  ⚠️ Invalid website: ${invalidWebsiteCount}`)
 
     if (filteredByAgency > 0) addLog(`🚫 Filtered out ${filteredByAgency} recruitment agencies`)
+    if (filteredByWebsite > 0) addLog(`🌐 Filtered out ${filteredByWebsite} jobs due to missing/recruitment websites`)
+    if (filteredByLaw > 0) addLog(`⚖️ Filtered out ${filteredByLaw} law/legal companies`)
     if (filteredByPrivate > 0) addLog(`🏢 Filtered out ${filteredByPrivate} private advertisers`)
     if (filteredByPhrases > 0) addLog(`📝 Filtered out ${filteredByPhrases} jobs with unwanted phrases`)
     if (filteredBySales > 0) addLog(`📂 Filtered out ${filteredBySales} non-Sales jobs`)
-    if (invalidWebsiteCount > 0) addLog(`⚠️ ${invalidWebsiteCount} jobs had missing company websites (still included)`)
+    if (invalidWebsiteCount > 0) addLog(`⚠️ ${invalidWebsiteCount} jobs had missing company websites (excluded)`)
 
     return Array.from(jobsMap.values())
   }
