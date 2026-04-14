@@ -35,11 +35,30 @@ export function useLeads(filters?: LeadFilters) {
     queryClient.invalidateQueries({ queryKey: [STATS_KEY] })
   }
 
+  // Helper to get the current query key (handles filter reference issues)
+  const getCurrentQueryKey = () => {
+    // Get all queries that start with [LEADS_KEY]
+    const allQueries = queryClient.getQueryCache().getAll()
+    const leadsQueryKey = allQueries.find(q => 
+      q.queryKey[0] === LEADS_KEY && Array.isArray(q.queryKey[1])
+    )?.queryKey
+    return leadsQueryKey || [LEADS_KEY, filters]
+  }
+
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Lead> }) =>
       updateLead(id, updates),
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: [LEADS_KEY] })
+    onSuccess: (updatedLead, variables) => {
+      // Method 1: Update all leads queries in the cache
+      queryClient.setQueriesData(
+        { queryKey: [LEADS_KEY], exact: false },
+        (oldData: Lead[] | undefined) => {
+          if (!oldData) return oldData
+          return oldData.map(lead => 
+            lead.id === variables.id ? { ...lead, ...variables.updates } : lead
+          )
+        }
+      )
       showToast('Lead updated successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
@@ -58,7 +77,16 @@ export function useLeads(filters?: LeadFilters) {
     mutationFn: ({ ids, status }: { ids: string[]; status: LeadStatus }) =>
       bulkUpdateStatus(ids, status),
     onSuccess: (_, variables) => {
-      invalidate()
+      // Update all leads queries in the cache
+      queryClient.setQueriesData(
+        { queryKey: [LEADS_KEY], exact: false },
+        (oldData: Lead[] | undefined) => {
+          if (!oldData) return oldData
+          return oldData.map(lead => 
+            variables.ids.includes(lead.id) ? { ...lead, status: variables.status } : lead
+          )
+        }
+      )
       showToast(`${variables.ids.length} lead(s) marked as ${variables.status}`, 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
@@ -89,7 +117,6 @@ export function useLeads(filters?: LeadFilters) {
     onError: (err: Error) => showToast(err.message, 'error'),
   })
 
-  // Bulk update for enrichment
   const bulkUpdateMutation = useMutation({
     mutationFn: async (updates: Array<{ id: string; updates: Partial<Lead> }>) => {
       const results = []
@@ -99,8 +126,18 @@ export function useLeads(filters?: LeadFilters) {
       }
       return results
     },
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (results) => {
+      // Update all leads queries in the cache
+      const updatedMap = new Map(results.map(r => [r.id, r]))
+      queryClient.setQueriesData(
+        { queryKey: [LEADS_KEY], exact: false },
+        (oldData: Lead[] | undefined) => {
+          if (!oldData) return oldData
+          return oldData.map(lead => 
+            updatedMap.has(lead.id) ? { ...lead, ...updatedMap.get(lead.id) } : lead
+          )
+        }
+      )
       showToast('Leads enriched successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),

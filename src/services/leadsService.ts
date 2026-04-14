@@ -54,7 +54,7 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
     }
   }
   
-  // NEW: Response filter
+  // Response filter - now using the dedicated column
   if (filters?.response && filters.response !== 'all') {
     query = query.eq('response', filters.response)
   }
@@ -154,22 +154,36 @@ export async function bulkUpdateStatus(
   if (error) throw new Error(`Failed to bulk update status: ${error.message}`)
 }
 
+// Permanently delete the lead
 export async function deleteLead(id: string): Promise<void> {
   const { error } = await supabase
     .from('leads')
-    .update({
-      status: 'deleted',
-      updated_at: new Date().toISOString(),
-    })
+    .delete()
     .eq('id', id)
 
   if (error) throw new Error(`Failed to delete lead: ${error.message}`)
 }
 
+// Bulk update response for multiple leads
+export async function bulkUpdateResponse(
+  ids: string[],
+  response: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('leads')
+    .update({
+      response,
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', ids)
+
+  if (error) throw new Error(`Failed to bulk update response: ${error.message}`)
+}
+
 export async function getLeadStats(): Promise<LeadStats> {
   const { data, error } = await supabase
     .from('leads')
-    .select('status, enrichment_status, follow_up_required, created_at')
+    .select('status, enrichment_status, follow_up_required, created_at, response')
 
   if (error) throw new Error(`Failed to fetch stats: ${error.message}`)
 
@@ -177,15 +191,15 @@ export async function getLeadStats(): Promise<LeadStats> {
   const leads = data ?? []
 
   return {
-    total: leads.filter((l) => l.status !== 'deleted').length,
+    total: leads.length,
     newToday: leads.filter(
       (l) => l.created_at?.startsWith(today) && l.status === 'Not Sent'
     ).length,
     awaitingEnrichment: leads.filter(
-      (l) => l.enrichment_status === 'pending' && l.status !== 'deleted'
+      (l) => l.enrichment_status === 'pending'
     ).length,
     followUpNeeded: leads.filter(
-      (l) => l.follow_up_required === true && l.status !== 'deleted'
+      (l) => l.follow_up_required === true
     ).length,
     converted: leads.filter((l) => l.status === 'converted').length,
     called: leads.filter((l) => l.status === 'called').length,
@@ -204,7 +218,6 @@ export async function getPendingEnrichmentLeads(): Promise<Lead[]> {
     .from('leads')
     .select('*')
     .eq('enrichment_status', 'pending')
-    .neq('status', 'deleted')
     .order('created_at', { ascending: false })
 
   if (error) throw new Error(`Failed to fetch pending leads: ${error.message}`)
@@ -218,7 +231,6 @@ export async function getFollowUpLeads(): Promise<Lead[]> {
     .select('*')
     .eq('follow_up_required', true)
     .eq('email_sent', false)
-    .neq('status', 'deleted')
     .not('contact_email', 'is', null)
     .order('created_at', { ascending: false })
 

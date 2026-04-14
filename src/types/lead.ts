@@ -3,9 +3,11 @@
 // Simplified - ONLY email statuses
 export type LeadStatus = 
   | 'Not Sent'
+  | 'Closed'
   | 'Email 1'
   | 'Email 2'
   | 'Email 3'
+  | 'Sequence Closed'
 
 export type EnrichmentStatus =
   | 'pending'
@@ -48,6 +50,9 @@ export interface Lead {
   opsComments: string | null
   charlieFeedback: string | null
   status: LeadStatus
+  lastActionDate: string | null  
+  nextActionDays: number | null   
+  nextActionDate: string | null  
   enrichmentStatus: EnrichmentStatus
   emailSent: boolean
   emailSentAt: string | null
@@ -75,9 +80,7 @@ export interface Lead {
   country: string | null
   isVerified: boolean
   matchAssessment: MatchAssessment | null
-  
-  // NEW: Response column
-  response: ResponseStatus | null
+  response: string | null
 }
 
 export interface NewLead {
@@ -104,6 +107,9 @@ export interface NewLead {
   opsComments?: string | null
   charlieFeedback?: string | null
   status?: LeadStatus
+  lastActionDate?: string | null
+  nextActionDays?: number | null
+  nextActionDate?: string | null
   enrichmentStatus?: EnrichmentStatus
   emailSent?: boolean
   emailSentAt?: string | null
@@ -130,7 +136,7 @@ export interface NewLead {
   country?: string | null
   isVerified?: boolean
   matchAssessment?: MatchAssessment | null
-  response?: ResponseStatus | null  // NEW
+  response?: string | null
 }
 
 export interface LeadFilters {

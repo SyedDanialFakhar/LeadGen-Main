@@ -5,7 +5,7 @@ import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { useFilters } from '@/hooks/useFilters'
 import { CITIES, PLATFORMS } from '@/utils/constants'
-import type { LeadStatus, ResponseFilter } from '@/types'
+import type { LeadStatus } from '@/types'
 
 export function LeadFilters() {
   const { filters, setFilter, clearFilters } = useFilters()
@@ -55,7 +55,7 @@ export function LeadFilters() {
         containerClassName="min-w-[140px]"
       />
 
-      {/* Email Status Filter - Updated with correct status values */}
+      {/* Email Status Filter - UPDATED with all statuses */}
       <Select
         value={filters.status ?? 'all'}
         onChange={(e) => setFilter('status', e.target.value as LeadStatus | 'all')}
@@ -65,6 +65,8 @@ export function LeadFilters() {
           { value: 'Email 1', label: '📧 Email 1 Sent' },
           { value: 'Email 2', label: '📧 Email 2 Sent' },
           { value: 'Email 3', label: '📧 Email 3 Sent' },
+          { value: 'Closed', label: '🔒 Closed' },
+          { value: 'Sequence Closed', label: '✅ Sequence Closed' },
         ]}
         containerClassName="min-w-[160px]"
       />
@@ -72,7 +74,7 @@ export function LeadFilters() {
       {/* Response Filter */}
       <Select
         value={filters.response ?? 'all'}
-        onChange={(e) => setFilter('response', e.target.value as ResponseFilter | 'all')}
+        onChange={(e) => setFilter('response', e.target.value as 'positive' | 'negative' | 'none' | 'all')}
         options={[
           { value: 'all', label: 'All Responses' },
           { value: 'positive', label: '👍 Positive' },

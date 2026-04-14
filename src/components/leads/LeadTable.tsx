@@ -1,6 +1,6 @@
 // src/components/leads/LeadTable.tsx
 import { useState, useRef, useEffect } from 'react'
-import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users, ThumbsUp, ThumbsDown, Minus, RefreshCw } from 'lucide-react'
+import { ExternalLink, Mail, Phone, Building2, Calendar, MapPin, ChevronLeft, ChevronRight, Linkedin, Globe, Edit2, Check, X, Star, User, Briefcase, Trash2, AlertTriangle, Users, ThumbsUp, ThumbsDown, Minus, RefreshCw, Clock } from 'lucide-react'
 import { LeadStatusBadge, EnrichmentBadge, PlatformBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
@@ -37,13 +37,15 @@ const MATCH_ASSESSMENT_ICONS: Record<MatchAssessment, string> = {
   Low: '⚠️',
 }
 
-// Email status styles with colors
+// Email status styles with colors (updated for new statuses)
 const getEmailStatusStyle = (status: string): string => {
   switch (status) {
     case 'Not Sent': return 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400'
     case 'Email 1': return 'bg-emerald-500 text-white shadow-sm'
     case 'Email 2': return 'bg-blue-500 text-white shadow-sm'
     case 'Email 3': return 'bg-purple-500 text-white shadow-sm'
+    case 'Closed': return 'bg-gray-500 text-white shadow-sm'
+    case 'Sequence Closed': return 'bg-slate-700 text-white shadow-sm'
     default: return 'bg-slate-100 dark:bg-slate-700/50 text-slate-500'
   }
 }
@@ -56,6 +58,27 @@ const getResponseStyle = (response: ResponseStatus): string => {
     case 'none': return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
     default: return 'bg-slate-100 dark:bg-slate-800 text-slate-500'
   }
+}
+
+// Helper to calculate next action date (last action + 2 days)
+// Correct - adds Next Action Days (5) + 2 days
+const calculateNextActionDate = (lastActionDate: string | null, nextActionDays: number = 5): string | null => {
+  if (!lastActionDate) return null
+  const date = new Date(lastActionDate)
+  // Add Next Action Days (5) + 2 days = total 7 days
+  date.setDate(date.getDate() + nextActionDays + 2)
+  return date.toISOString()
+}
+
+// Helper to format date for display
+const formatActionDate = (dateString: string | null): string => {
+  if (!dateString) return '—'
+  const date = new Date(dateString)
+  return date.toLocaleDateString('en-AU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
 }
 
 export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
@@ -146,6 +169,27 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     cancelEdit()
   }
 
+  // Handle email status change with auto-update of dates
+  const handleEmailStatusChange = (lead: Lead, newStatus: LeadStatus) => {
+    const updates: Partial<Lead> = { status: newStatus }
+    
+    // Update lastActionDate and nextActionDate when status changes to an email status
+    if (newStatus === 'Email 1' || newStatus === 'Email 2' || newStatus === 'Email 3') {
+      const now = new Date().toISOString()
+      updates.lastActionDate = now
+      updates.nextActionDate = calculateNextActionDate(now)
+      updates.nextActionDays = 5
+    }
+    
+    // If status is Closed or Sequence Closed, clear next action dates
+    if (newStatus === 'Closed' || newStatus === 'Sequence Closed') {
+      updates.nextActionDate = null
+      updates.nextActionDays = null
+    }
+    
+    updateLead({ id: lead.id, updates })
+  }
+
   const startEdit = (leadId: string, field: string, currentValue: string | null | undefined) => {
     const val = currentValue || ''
     setEditingId(leadId)
@@ -170,8 +214,19 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   }
 
   const handleBulkEmailStatus = (status: LeadStatus) => {
+    const now = new Date().toISOString()
     for (const id of selected) {
-      updateLead({ id, updates: { status } })
+      const updates: Partial<Lead> = { status }
+      if (status === 'Email 1' || status === 'Email 2' || status === 'Email 3') {
+        updates.lastActionDate = now
+        updates.nextActionDate = calculateNextActionDate(now)
+        updates.nextActionDays = 5
+      }
+      if (status === 'Closed' || status === 'Sequence Closed') {
+        updates.nextActionDate = null
+        updates.nextActionDays = null
+      }
+      updateLead({ id, updates })
     }
     setSelected([])
   }
@@ -239,17 +294,19 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   }
 
   const handleConfirmDelete = async () => {
-    if (!leadToDelete) return
-    
-    setIsDeleting(true)
-    try {
-      await deleteLead(leadToDelete.id)
-      setDeleteModalOpen(false)
-      setLeadToDelete(null)
-    } finally {
-      setIsDeleting(false)
-    }
+  if (!leadToDelete) return
+  
+  setIsDeleting(true)
+  try {
+    await deleteLead(leadToDelete.id)
+    // Remove the deleted lead from selected array if it was there
+    setSelected(prev => prev.filter(id => id !== leadToDelete.id))
+    setDeleteModalOpen(false)
+    setLeadToDelete(null)
+  } finally {
+    setIsDeleting(false)
   }
+}
 
   const handleBulkDeleteClick = () => {
     if (selected.length === 0) return
@@ -300,7 +357,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     )
   }
 
-  // Fixed renderEditableCell with proper width to prevent overlap
   const renderEditableCell = (
     leadId: string,
     field: string,
@@ -364,92 +420,74 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Bulk actions bar */}
-      {selected.length > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-            {selected.length} selected
-          </span>
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-slate-500 mr-1">Email Status:</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkEmailStatus('Email 1')}
-              className="border-emerald-200 text-emerald-600 hover:bg-emerald-50"
-            >
-              Email 1
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkEmailStatus('Email 2')}
-              className="border-blue-200 text-blue-600 hover:bg-blue-50"
-            >
-              Email 2
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkEmailStatus('Email 3')}
-              className="border-purple-200 text-purple-600 hover:bg-purple-50"
-            >
-              Email 3
-            </Button>
-            <span className="text-xs text-slate-500 ml-2 mr-1">Response:</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkResponse('positive')}
-              className="text-emerald-600 border-emerald-200 hover:bg-emerald-50"
-            >
-              <ThumbsUp className="w-3 h-3 mr-1" />
-              Positive
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkResponse('negative')}
-              className="text-red-600 border-red-200 hover:bg-red-50"
-            >
-              <ThumbsDown className="w-3 h-3 mr-1" />
-              Negative
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleBulkResponse('none')}
-            >
-              <Minus className="w-3 h-3 mr-1" />
-              Clear
-            </Button>
-            {/* Enrich Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleEnrichSelected}
-              isLoading={isEnriching}
-              leftIcon={<Building2 className="w-4 h-4" />}
-              disabled={selected.length === 0}
-              className="border-indigo-200 text-indigo-600 hover:bg-indigo-50"
-            >
-              Enrich ({selected.length})
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBulkDeleteClick}
-              leftIcon={<Trash2 className="w-4 h-4" />}
-              className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
-            >
-              Delete {selected.length}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
-              Clear
-            </Button>
-          </div>
-        </div>
-      )}
+
+{/* Bulk actions bar - IMPROVED */}
+{selected.length > 0 && (
+  <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl shadow-sm">
+    <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
+      {selected.length} selected
+    </span>
+    <div className="h-4 w-px bg-blue-300 dark:bg-blue-600 mx-1" />
+    
+    {/* Email Status Group */}
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-slate-500 mr-1">Email:</span>
+      <div className="flex gap-1">
+        <Button variant="outline" size="sm" onClick={() => handleBulkEmailStatus('Email 1')} className="h-7 px-2 text-xs border-emerald-200 text-emerald-600 hover:bg-emerald-50">
+          E1
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkEmailStatus('Email 2')} className="h-7 px-2 text-xs border-blue-200 text-blue-600 hover:bg-blue-50">
+          E2
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkEmailStatus('Email 3')} className="h-7 px-2 text-xs border-purple-200 text-purple-600 hover:bg-purple-50">
+          E3
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkEmailStatus('Closed')} className="h-7 px-2 text-xs border-gray-300 text-gray-600 hover:bg-gray-50">
+          Close
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkEmailStatus('Sequence Closed')} className="h-7 px-2 text-xs border-slate-400 text-slate-600 hover:bg-slate-50">
+          Seq
+        </Button>
+      </div>
+    </div>
+    
+    <div className="h-4 w-px bg-blue-300 dark:bg-blue-600" />
+    
+    {/* Response Group */}
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-slate-500 mr-1">Response:</span>
+      <div className="flex gap-1">
+        <Button variant="outline" size="sm" onClick={() => handleBulkResponse('positive')} className="h-7 px-2 text-xs border-emerald-200 text-emerald-600 hover:bg-emerald-50">
+          👍 Pos
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkResponse('negative')} className="h-7 px-2 text-xs border-red-200 text-red-600 hover:bg-red-50">
+          👎 Neg
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleBulkResponse('none')} className="h-7 px-2 text-xs">
+          ⚪ Clear
+        </Button>
+      </div>
+    </div>
+    
+    <div className="h-4 w-px bg-blue-300 dark:bg-blue-600" />
+    
+    {/* Action Buttons */}
+    <div className="flex gap-1">
+      <Button variant="outline" size="sm" onClick={handleEnrichSelected} isLoading={isEnriching} leftIcon={<Building2 className="w-3 h-3" />} disabled={selected.length === 0} className="h-7 px-2 text-xs border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+        Enrich
+      </Button>
+      <Button variant="outline" size="sm" onClick={handleBulkDeleteClick} leftIcon={<Trash2 className="w-3 h-3" />} className="h-7 px-2 text-xs text-red-600 hover:text-red-700 border-red-200 hover:border-red-300">
+        Delete
+      </Button>
+    </div>
+    
+    <div className="flex-1" />
+    
+    <Button variant="ghost" size="sm" onClick={() => setSelected([])} className="h-7 px-2 text-xs">
+      ✕ Clear
+    </Button>
+  </div>
+)}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
         <table className="w-full text-sm">
@@ -480,6 +518,9 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Company URL</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Match Assessment</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Email Status</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Last Action Date</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Next Action Days</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Next Action Date</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Response</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ops Comments</th>
               <th className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Charlie's Feedback</th>
@@ -555,32 +596,22 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  {/* Contact Name - Fixed width */}
                   <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'contactName', lead.contactName, 'Click to add', 'text')}
                   </td>
-                  
-                  {/* Role Title - Fixed width */}
                   <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'contactRole', lead.contactJobTitle, 'Click to add', 'text')}
                   </td>
-                  
-                  {/* Phone - Fixed width */}
                   <td className="px-3 py-3 min-w-[120px]">
                     {renderEditableCell(lead.id, 'phone', lead.contactPhone, 'Click to add', 'tel')}
                   </td>
-                  
-                  {/* Email - Fixed width */}
                   <td className="px-3 py-3 min-w-[150px]">
                     {renderEditableCell(lead.id, 'email', lead.contactEmail, 'Click to add', 'email')}
                   </td>
-                  
-                  {/* LinkedIn - Fixed width */}
                   <td className="px-3 py-3 min-w-[150px]">
                     {renderEditableCell(lead.id, 'linkedin', lead.contactLinkedinUrl, 'Click to add', 'url')}
                   </td>
                   
-                  {/* Company URL */}
                   <td className="px-3 py-3 min-w-[120px]">
                     {lead.companyWebsite ? (
                       <a
@@ -601,7 +632,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     )}
                   </td>
                   
-                  {/* Match Assessment Column */}
                   <td className="px-3 py-3 min-w-[100px]" onClick={(e) => e.stopPropagation()}>
                     {editingId === lead.id && editingField === 'matchAssessment' ? (
                       <div className="flex items-center gap-1 min-w-[140px]">
@@ -666,9 +696,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   <td className="px-3 py-3 min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                     <select
                       value={lead.status}
-                      onChange={(e) => {
-                        updateLead({ id: lead.id, updates: { status: e.target.value as LeadStatus } })
-                      }}
+                      onChange={(e) => handleEmailStatusChange(lead, e.target.value as LeadStatus)}
                       className={cn(
                         "px-2 py-1 text-xs rounded border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full",
                         getEmailStatusStyle(lead.status)
@@ -678,8 +706,37 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                       <option value="Email 1">📧 Email 1 Sent</option>
                       <option value="Email 2">📧 Email 2 Sent</option>
                       <option value="Email 3">📧 Email 3 Sent</option>
+                      <option value="Closed">🔒 Closed</option>
+                      <option value="Sequence Closed">✅ Sequence Closed</option>
                     </select>
                    </td>
+                  
+                  {/* Last Action Date */}
+                  <td className="px-3 py-3 min-w-[100px]">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-600 dark:text-slate-400">
+                        {formatActionDate(lead.lastActionDate)}
+                      </span>
+                    </div>
+                  </td>
+                  
+                  {/* Next Action Days (Constant 5) */}
+                  <td className="px-3 py-3 min-w-[80px]">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {lead.nextActionDays !== null ? `${lead.nextActionDays} days` : '—'}
+                    </span>
+                  </td>
+                  
+                  {/* Next Action Date */}
+                  <td className="px-3 py-3 min-w-[100px]">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                        {formatActionDate(lead.nextActionDate)}
+                      </span>
+                    </div>
+                  </td>
                   
                   {/* Response Column */}
                   <td className="px-3 py-3 min-w-[110px]" onClick={(e) => e.stopPropagation()}>
@@ -700,17 +757,17 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                       <option value="positive">👍 Positive</option>
                       <option value="negative">👎 Negative</option>
                     </select>
-                   </td>
+                  </td>
                   
                   {/* Ops Comments */}
                   <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'opsComments', getCleanComments(lead.opsComments), 'Click to add comment', 'text')}
-                   </td>
+                  </td>
                   
                   {/* Charlie's Feedback */}
                   <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Click to add feedback', 'text')}
-                   </td>
+                  </td>
                   
                   {/* Actions */}
                   <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>

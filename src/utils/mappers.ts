@@ -10,7 +10,7 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     jobAdUrl: row.job_ad_url as string,
     platform: row.platform as Lead['platform'],
     city: row.city as Lead['city'],
-    location: (row.location as string) ?? null,  // ADD THIS
+    location: (row.location as string) ?? null,
     companyName: row.company_name as string,
     jobTitle: row.job_title as string,
     contactName: (row.contact_name as string) ?? null,
@@ -29,6 +29,9 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     opsComments: (row.ops_comments as string) ?? null,
     charlieFeedback: (row.charlie_feedback as string) ?? null,
     status: (row.status as Lead['status']) || 'Not Sent',
+    lastActionDate: (row.last_action_date as string) ?? null,
+    nextActionDays: (row.next_action_days as number) ?? 5,
+    nextActionDate: (row.next_action_date as string) ?? null,
     enrichmentStatus: row.enrichment_status as Lead['enrichmentStatus'],
     emailSent: (row.email_sent as boolean) ?? false,
     emailSentAt: (row.email_sent_at as string) ?? null,
@@ -55,7 +58,7 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     country: (row.country as string) ?? null,
     isVerified: (row.is_verified as boolean) ?? false,
     matchAssessment: (row.match_assessment as MatchAssessment) ?? null,
-    response: (row.response as Lead['response']) ?? null,
+    response: (row.response as string) ?? null,
   }
 }
 
@@ -65,7 +68,7 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     job_ad_url: lead.jobAdUrl,
     platform: lead.platform,
     city: lead.city ?? null,
-    location: lead.location ?? null,  
+    location: lead.location ?? null,
     company_name: lead.companyName,
     job_title: lead.jobTitle,
     contact_name: lead.contactName ?? null,
@@ -84,6 +87,9 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     ops_comments: lead.opsComments ?? null,
     charlie_feedback: lead.charlieFeedback ?? null,
     status: lead.status ?? 'Not Sent',
+    last_action_date: lead.lastActionDate ?? null,
+    next_action_days: lead.nextActionDays ?? 5,
+    next_action_date: lead.nextActionDate ?? null,
     enrichment_status: lead.enrichmentStatus ?? 'pending',
     follow_up_required: lead.followUpRequired ?? false,
     raw_scrape_data: lead.rawScrapeData ?? null,
@@ -108,7 +114,7 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     country: lead.country ?? null,
     is_verified: lead.isVerified ?? false,
     match_assessment: lead.matchAssessment ?? null,
-    response: lead.response ?? null,  // NEW
+    response: lead.response ?? null,
   }
 }
 
@@ -138,6 +144,9 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.opsComments !== undefined) dbRow.ops_comments = updates.opsComments
   if (updates.charlieFeedback !== undefined) dbRow.charlie_feedback = updates.charlieFeedback
   if (updates.status !== undefined) dbRow.status = updates.status
+  if (updates.lastActionDate !== undefined) dbRow.last_action_date = updates.lastActionDate
+  if (updates.nextActionDays !== undefined) dbRow.next_action_days = updates.nextActionDays
+  if (updates.nextActionDate !== undefined) dbRow.next_action_date = updates.nextActionDate
   if (updates.enrichmentStatus !== undefined) dbRow.enrichment_status = updates.enrichmentStatus
   if (updates.emailSent !== undefined) dbRow.email_sent = updates.emailSent
   if (updates.emailSentAt !== undefined) dbRow.email_sent_at = updates.emailSentAt
@@ -164,7 +173,7 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.country !== undefined) dbRow.country = updates.country
   if (updates.isVerified !== undefined) dbRow.is_verified = updates.isVerified
   if (updates.matchAssessment !== undefined) dbRow.match_assessment = updates.matchAssessment
-  if (updates.response !== undefined) dbRow.response = updates.response  // NEW
+  if (updates.response !== undefined) dbRow.response = updates.response
 
   dbRow.updated_at = new Date().toISOString()
 
