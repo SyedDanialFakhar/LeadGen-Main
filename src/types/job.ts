@@ -1,7 +1,10 @@
+// src/types/job.ts or wherever your JobResult interface is defined
+
 export interface JobResult {
   id: string
   companyId: string | null
   companyName: string
+  companyLogo: string | null
   companyWebsite: string | null
   companyIndustry: string | null
   companySize: string | null
@@ -21,6 +24,7 @@ export interface JobResult {
   datePostedRaw: string
   expiresAt: string | null
   city: string
+  location: string | null  // ADD THIS - full location like "Brisbane QLD"
   state: string
   country: string
   workType: string | null

@@ -12,6 +12,7 @@ export function dbRowToLead(row: Record<string, unknown>): Lead {
     city: row.city as Lead['city'],
     location: (row.location as string) ?? null,
     companyName: row.company_name as string,
+    companyLogo: (row.company_logo as string) ?? null,
     jobTitle: row.job_title as string,
     contactName: (row.contact_name as string) ?? null,
     contactJobTitle: (row.contact_job_title as string) ?? null,
@@ -70,6 +71,7 @@ export function newLeadToDbRow(lead: NewLead): Record<string, unknown> {
     city: lead.city ?? null,
     location: lead.location ?? null,
     company_name: lead.companyName,
+    company_logo: lead.companyLogo ?? null,
     job_title: lead.jobTitle,
     contact_name: lead.contactName ?? null,
     contact_job_title: lead.contactJobTitle ?? null,
@@ -127,6 +129,7 @@ export function leadUpdatesToDbRow(updates: Partial<Lead>): Record<string, unkno
   if (updates.city !== undefined) dbRow.city = updates.city
   if (updates.location !== undefined) dbRow.location = updates.location
   if (updates.companyName !== undefined) dbRow.company_name = updates.companyName
+  if (updates.companyLogo !== undefined) dbRow.company_logo = updates.companyLogo
   if (updates.jobTitle !== undefined) dbRow.job_title = updates.jobTitle
   if (updates.contactName !== undefined) dbRow.contact_name = updates.contactName
   if (updates.contactJobTitle !== undefined) dbRow.contact_job_title = updates.contactJobTitle

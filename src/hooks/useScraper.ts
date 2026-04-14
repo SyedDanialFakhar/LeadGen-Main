@@ -88,7 +88,10 @@ export function useScraper() {
       const companyId = job.advertiser?.id || job.companyProfile?.id || null
       const isVerified = job.advertiser?.isVerified || job.isVerified || false
       
-      // Get location - FIXED: extract full location and separate city
+      // Get company logo from advertiser
+      const companyLogo = job.advertiser?.logo || null
+      
+      // Get location - extract full location and separate city
       const jobLocationInfo = job.joblocationInfo
       const fullLocation = jobLocationInfo?.displayLocation || job.location || 'Location not specified'
       const state = jobLocationInfo?.location?.match(/(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)/)?.[1] || ''
@@ -195,6 +198,7 @@ export function useScraper() {
         companyId,
         companyName,
         companyWebsite,
+        companyLogo,
         companyIndustry,
         companySize,
         companyRating,
@@ -213,7 +217,7 @@ export function useScraper() {
         datePostedRaw: datePostedRaw,
         expiresAt: job.expiresAtUtc || null,
         city: city,
-        location: fullLocation,  // ADD THIS - full location string
+        location: fullLocation,
         state: state,
         country: country,
         workType: workType,

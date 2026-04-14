@@ -33,6 +33,7 @@ export interface Lead {
   city: City
   location: string | null  
   companyName: string
+  companyLogo: string | null 
   jobTitle: string
   contactName: string | null
   contactJobTitle: string | null
@@ -90,6 +91,7 @@ export interface NewLead {
   city: City | null  
   location?: string | null 
   companyName: string
+  companyLogo?: string | null
   jobTitle: string
   contactName?: string | null
   contactJobTitle?: string | null
