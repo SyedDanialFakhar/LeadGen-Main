@@ -14,9 +14,18 @@ export interface EnrichedCompanyData {
 function cleanCompanyName(name: string): string {
   if (!name) return ''
   return name
-    .replace(/\bPty\.?\s*Ltd\.?\b|\bLtd\.?\b|\bPty\.?\b|\bLLC\b|\bInc\.?\b|\bCorp\.?\b|\bLimited\b/gi, '')
+    .replace(/\bPty\.?\s*Ltd\.?\b|\bLtd\.?\b|\bPty\.?\b|\bLLC\b|\bInc\.?\b|\bCorp\.?\b|\bLimited\b|\bOperations\b|\bPty Ltd\b/gi, '')
     .replace(/[&]/g, 'and')
     .replace(/[^\w\s]/g, '')
+    .trim()
+}
+
+// Simplify company name for LinkedIn search (remove common legal suffixes)
+function simplifyForLinkedIn(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b(pty|ltd|limited|operations|australia|pty ltd)\b/gi, '')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
@@ -43,7 +52,6 @@ const BLOCKED_DOMAINS = [
   'facebook.com', 'instagram.com', 'twitter.com', 'x.com',
   'tiktok.com', 'youtube.com', 'pinterest.com',
   'seek.com.au', 'indeed.com', 'glassdoor.com', 'jora.com',
-  'linkedin.com',
   'yellowpages.com.au', 'whitepages.com.au', 'truelocal.com.au',
   'hotfrog.com.au', 'localsearch.com.au', 'yelp.com',
   'wikipedia.org', 'wikimedia.org',
@@ -70,7 +78,7 @@ function domainMatchScore(domain: string, companyName: string): number {
   return 0
 }
 
-// ─── PRIMARY: Google Knowledge Graph API (FREE, 100k/day, highest accuracy) ───
+// ─── PRIMARY: Google Knowledge Graph API (FREE, 100k/day) ─────────────────────
 
 async function tryKnowledgeGraph(
   companyName: string,
@@ -78,21 +86,19 @@ async function tryKnowledgeGraph(
 ): Promise<{ website: string | null; linkedinUrl: string | null; industry: string | null; confidence: number }> {
   const empty = { website: null, linkedinUrl: null, industry: null, confidence: 0 }
   
-  // Get API key from environment variable
   const apiKey = import.meta.env.VITE_GOOGLE_KNOWLEDGE_GRAPH_API_KEY
   if (!apiKey) {
-    console.log(`  [KnowledgeGraph] No API key configured. Get one from Google Cloud Console (free).`)
+    console.log(`  [KnowledgeGraph] No API key configured`)
     return empty
   }
 
   try {
     const cleanName = cleanCompanyName(companyName)
-    console.log(`  [KnowledgeGraph] Searching: "${cleanName}"`)
-
-    // Add location context to improve results for Australian companies
     const query = city && city.toLowerCase() !== 'australia' && city.length > 2
       ? `${cleanName} ${city}`
       : `${cleanName} Australia`
+
+    console.log(`  [KnowledgeGraph] Searching: "${query}"`)
 
     const response = await fetch(
       `https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(query)}&key=${apiKey}&limit=3&types=Organization&indent=True`,
@@ -111,59 +117,51 @@ async function tryKnowledgeGraph(
       return empty
     }
 
-    // Find the best match (prefer Australian entities)
     let bestMatch = null
     let bestScore = 0
 
     for (const item of data.itemListElement) {
       const result = item.result
       const name = result.name || ''
-      const detailedDescription = result.detailedDescription?.url || null
-      const url = result.url || result.sameAs?.find((u: string) => u.includes('.com')) || null
       
-      // Calculate match score
       let score = 0
       if (name.toLowerCase().includes(cleanName.toLowerCase())) score += 5
-      if (url && url.includes('.com.au')) score += 3  // Prefer .com.au
-      if (url && extractDomain(url).includes(cleanName.toLowerCase().replace(/\s/g, ''))) score += 4
+      
+      // Extract LinkedIn from sameAs
+      let linkedinUrl = null
+      if (result.sameAs) {
+        const sameAs = Array.isArray(result.sameAs) ? result.sameAs : [result.sameAs]
+        linkedinUrl = sameAs.find((u: string) => u && u.includes('linkedin.com/company/')) || null
+        if (linkedinUrl) score += 3
+      }
+      
+      // Extract website
+      let website = result.url || null
+      if (!website && result.sameAs) {
+        const sameAs = Array.isArray(result.sameAs) ? result.sameAs : [result.sameAs]
+        website = sameAs.find((u: string) => 
+          u && !u.includes('wikipedia.org') && !u.includes('facebook.com') && 
+          !u.includes('twitter.com') && !u.includes('linkedin.com')
+        ) || null
+      }
+      
+      if (website && website.includes('.com.au')) score += 2
       
       if (score > bestScore) {
         bestScore = score
-        bestMatch = result
+        bestMatch = { website, linkedinUrl, industry: result.description || null }
       }
     }
 
-    if (!bestMatch) {
-      console.log(`  [KnowledgeGraph] No good match found`)
-      return empty
-    }
-
-    // Extract website from various possible fields
-    let website = bestMatch.url || null
-    if (!website && bestMatch.sameAs) {
-      const sameAs = Array.isArray(bestMatch.sameAs) ? bestMatch.sameAs : [bestMatch.sameAs]
-      website = sameAs.find((u: string) => 
-        u && !u.includes('wikipedia.org') && !u.includes('facebook.com') && !u.includes('twitter.com')
-      ) || null
-    }
-
-    // Try to find LinkedIn from sameAs
-    let linkedinUrl = null
-    if (bestMatch.sameAs) {
-      const sameAs = Array.isArray(bestMatch.sameAs) ? bestMatch.sameAs : [bestMatch.sameAs]
-      linkedinUrl = sameAs.find((u: string) => u && u.includes('linkedin.com/company/')) || null
-    }
-
-    if (website) {
-      website = normaliseUrl(website)
+    if (bestMatch && bestMatch.website) {
       const confidence = Math.min(10, 7 + Math.floor(bestScore / 2))
-      console.log(`  [KnowledgeGraph] ✅ ${website} (confidence ${confidence})`)
-      if (linkedinUrl) console.log(`  [KnowledgeGraph] ✅ LinkedIn: ${linkedinUrl}`)
+      console.log(`  [KnowledgeGraph] ✅ ${bestMatch.website} (confidence ${confidence})`)
+      if (bestMatch.linkedinUrl) console.log(`  [KnowledgeGraph] ✅ LinkedIn: ${bestMatch.linkedinUrl}`)
       
       return {
-        website,
-        linkedinUrl,
-        industry: bestMatch.description || null,
+        website: normaliseUrl(bestMatch.website),
+        linkedinUrl: bestMatch.linkedinUrl,
+        industry: bestMatch.industry,
         confidence,
       }
     }
@@ -176,7 +174,7 @@ async function tryKnowledgeGraph(
   }
 }
 
-// ─── Source: DuckDuckGo (FREE, no API key, no CORS, fast fallback) ───────────
+// ─── IMPROVED: DuckDuckGo with better LinkedIn detection ──────────────────────
 
 async function tryDuckDuckGo(
   companyName: string,
@@ -186,22 +184,33 @@ async function tryDuckDuckGo(
   
   try {
     const cleanName = cleanCompanyName(companyName)
+    const linkedinName = simplifyForLinkedIn(companyName)
     const locationPart = city && city.toLowerCase() !== 'australia' && city.length > 2
       ? ` ${city}`
       : ' Australia'
     
-    const queries = [
-      `${cleanName}${locationPart} company official website`,
-      `${cleanName}${locationPart} linkedin`,
+    // Separate queries for website and LinkedIn for better results
+    const websiteQueries = [
+      `${cleanName}${locationPart} official website`,
+      `${cleanName}${locationPart} company`,
       `${cleanName} .com.au`,
+    ]
+    
+    // IMPROVED: LinkedIn-specific queries using site: operator
+    const linkedinQueries = [
+      `site:linkedin.com/company/${linkedinName.replace(/\s/g, '-')}`,
+      `"${cleanName}" site:linkedin.com/company/`,
+      `${cleanName} linkedin company page`,
+      `${linkedinName} linkedin`,
     ]
     
     let bestWebsite: string | null = null
     let bestLinkedin: string | null = null
     let bestScore = 0
     
-    for (const query of queries) {
-      console.log(`  [DuckDuckGo] Query: "${query}"`)
+    // First, try to find LinkedIn specifically
+    for (const query of linkedinQueries) {
+      console.log(`  [DuckDuckGo] LinkedIn query: "${query}"`)
       
       const response = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow-enrichment`,
@@ -212,8 +221,8 @@ async function tryDuckDuckGo(
       
       const data = await response.json()
       
+      // Collect URLs from DDG response
       const urls: string[] = []
-      
       if (data.AbstractURL) urls.push(data.AbstractURL)
       if (data.Redirect) urls.push(data.Redirect)
       if (data.Results) {
@@ -235,12 +244,56 @@ async function tryDuckDuckGo(
       for (const url of urls) {
         if (!url || !url.startsWith('http')) continue
         
-        if (!bestLinkedin && url.includes('linkedin.com/company/')) {
-          bestLinkedin = url.split('?')[0]
-          console.log(`  [DuckDuckGo] ✅ LinkedIn: ${bestLinkedin}`)
+        // Look for LinkedIn company URLs
+        if (url.includes('linkedin.com/company/') || url.includes('linkedin.com/company/')) {
+          // Clean the URL
+          let cleanUrl = url.split('?')[0]
+          if (!cleanUrl.endsWith('/')) cleanUrl = `${cleanUrl}/`
+          bestLinkedin = cleanUrl
+          console.log(`  [DuckDuckGo] ✅ LinkedIn found: ${bestLinkedin}`)
+          break
         }
-        
+      }
+      
+      if (bestLinkedin) break
+    }
+    
+    // Then find website
+    for (const query of websiteQueries) {
+      console.log(`  [DuckDuckGo] Website query: "${query}"`)
+      
+      const response = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow-enrichment`,
+        { signal: AbortSignal.timeout(6000) }
+      )
+      
+      if (!response.ok) continue
+      
+      const data = await response.json()
+      
+      const urls: string[] = []
+      if (data.AbstractURL) urls.push(data.AbstractURL)
+      if (data.Redirect) urls.push(data.Redirect)
+      if (data.Results) {
+        for (const result of data.Results) {
+          if (result.FirstURL) urls.push(result.FirstURL)
+        }
+      }
+      if (data.RelatedTopics) {
+        for (const topic of data.RelatedTopics) {
+          if (topic.FirstURL) urls.push(topic.FirstURL)
+          if (topic.Results) {
+            for (const sub of topic.Results) {
+              if (sub.FirstURL) urls.push(sub.FirstURL)
+            }
+          }
+        }
+      }
+      
+      for (const url of urls) {
+        if (!url || !url.startsWith('http')) continue
         if (isBlockedUrl(url)) continue
+        if (url.includes('linkedin.com')) continue
         
         const domain = extractDomain(url)
         if (!domain) continue
@@ -252,7 +305,7 @@ async function tryDuckDuckGo(
         if (score > bestScore) {
           bestScore = score
           bestWebsite = normaliseUrl(url)
-          console.log(`  [DuckDuckGo] 📍 Candidate: ${bestWebsite} (score ${score})`)
+          console.log(`  [DuckDuckGo] 📍 Website candidate: ${bestWebsite} (score ${score})`)
         }
       }
       
@@ -260,7 +313,8 @@ async function tryDuckDuckGo(
     }
     
     const confidence = Math.min(10, Math.floor(bestScore / 1.5))
-    if (bestWebsite) console.log(`  [DuckDuckGo] ✅ Final: ${bestWebsite} (confidence ${confidence})`)
+    if (bestWebsite) console.log(`  [DuckDuckGo] ✅ Final website: ${bestWebsite} (confidence ${confidence})`)
+    if (bestLinkedin) console.log(`  [DuckDuckGo] ✅ Final LinkedIn: ${bestLinkedin}`)
     
     return { website: bestWebsite, linkedinUrl: bestLinkedin, confidence }
     
@@ -363,26 +417,99 @@ async function tryGoogleSearch(
   }
 
   const cleanName = cleanCompanyName(companyName)
+  const linkedinName = simplifyForLinkedIn(companyName)
   const locationSuffix = city && city.toLowerCase() !== 'australia' && city.length > 2
     ? ` ${city}`
     : ' Australia'
 
-  const queries = [
+  // Separate website and LinkedIn queries
+  const websiteQueries = [
     `"${cleanName}"${locationSuffix} official website`,
     `${cleanName}${locationSuffix} site:.com.au`,
     `${cleanName}${locationSuffix} company`,
-    `"${cleanName}" linkedin company`,
+  ]
+  
+  const linkedinQueries = [
+    `site:linkedin.com/company/${linkedinName.replace(/\s/g, '-')}`,
+    `"${cleanName}" site:linkedin.com/company/`,
+    `${cleanName} linkedin australia`,
   ]
 
   let bestWebsite: string | null = null
   let bestLinkedin: string | null = null
   let bestScore = 0
 
-  for (const query of queries) {
-    console.log(`  [Google] Query: "${query}"`)
+  // First, search for LinkedIn
+  for (const query of linkedinQueries) {
+    console.log(`  [Google] LinkedIn query: "${query}"`)
 
     try {
-      let items: Array<{ link?: string; url?: string; title?: string }> = []
+      let items: Array<{ link?: string; url?: string }> = []
+
+      if (apifyToken) {
+        const startRes = await fetch(
+          `https://api.apify.com/v2/acts/apify~google-search-scraper/runs?token=${apifyToken}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              queries: query,
+              maxPagesPerQuery: 1,
+              resultsPerPage: 5,
+              languageCode: 'en',
+              countryCode: 'au',
+            }),
+          }
+        )
+
+        if (!startRes.ok) continue
+        const { data: runData } = await startRes.json()
+        const runId = runData.id
+
+        let status = 'RUNNING'
+        for (let i = 0; i < 15 && status === 'RUNNING'; i++) {
+          await new Promise(r => setTimeout(r, 2000))
+          const pollRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`)
+          status = (await pollRes.json()).data?.status ?? 'FAILED'
+        }
+
+        if (status !== 'SUCCEEDED') continue
+
+        const datasetRes = await fetch(
+          `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${apifyToken}`
+        )
+        const rawItems = await datasetRes.json()
+
+        for (const page of rawItems) {
+          const organic: Array<{ url?: string; link?: string }> = page.organicResults ?? page.results ?? []
+          items.push(...organic)
+        }
+      }
+
+      for (const item of items) {
+        const rawUrl = item.link ?? item.url ?? ''
+        if (!rawUrl || !rawUrl.startsWith('http')) continue
+        
+        if (rawUrl.includes('linkedin.com/company/')) {
+          bestLinkedin = rawUrl.split('?')[0]
+          if (!bestLinkedin.endsWith('/')) bestLinkedin = `${bestLinkedin}/`
+          console.log(`  [Google] ✅ LinkedIn: ${bestLinkedin}`)
+          break
+        }
+      }
+      
+      if (bestLinkedin) break
+    } catch (err) {
+      console.log(`  [Google] LinkedIn query error:`, err)
+    }
+  }
+
+  // Then search for website
+  for (const query of websiteQueries) {
+    console.log(`  [Google] Website query: "${query}"`)
+
+    try {
+      let items: Array<{ link?: string; url?: string }> = []
 
       if (apifyToken) {
         const startRes = await fetch(
@@ -422,35 +549,12 @@ async function tryGoogleSearch(
           const organic: Array<{ url?: string; link?: string }> = page.organicResults ?? page.results ?? []
           items.push(...organic)
         }
-        if (items.length === 0 && Array.isArray(rawItems)) {
-          items = rawItems
-        }
-      } else {
-        const ddgRes = await fetch(
-          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow-enrichment`,
-          { signal: AbortSignal.timeout(6000) }
-        )
-        if (ddgRes.ok) {
-          const ddg = await ddgRes.json()
-          const urls = [
-            ddg.AbstractURL,
-            ddg.OfficialWebsite,
-            ...(ddg.Results ?? []).map((r: { FirstURL?: string }) => r.FirstURL),
-            ...(ddg.RelatedTopics ?? []).map((r: { FirstURL?: string }) => r.FirstURL),
-          ].filter(Boolean)
-          items = urls.map((u: string) => ({ link: u }))
-        }
       }
 
       for (const item of items) {
-        const rawUrl: string = item.link ?? item.url ?? ''
+        const rawUrl = item.link ?? item.url ?? ''
         if (!rawUrl || !rawUrl.startsWith('http')) continue
-
-        if (!bestLinkedin && rawUrl.includes('linkedin.com/company/')) {
-          bestLinkedin = rawUrl.split('?')[0]
-          console.log(`  [Google] ✅ LinkedIn: ${bestLinkedin}`)
-        }
-
+        if (rawUrl.includes('linkedin.com')) continue
         if (isBlockedUrl(rawUrl)) continue
 
         const domain = extractDomain(rawUrl)
@@ -463,20 +567,19 @@ async function tryGoogleSearch(
         if (score > bestScore) {
           bestScore = score
           bestWebsite = normaliseUrl(rawUrl)
-          console.log(`  [Google] 📍 Candidate: ${bestWebsite} (score ${score})`)
+          console.log(`  [Google] 📍 Website candidate: ${bestWebsite} (score ${score})`)
         }
       }
 
-      if (bestScore >= 8 && bestLinkedin) break
-      if (bestScore >= 10) break
-
+      if (bestScore >= 8) break
     } catch (err) {
-      console.log(`  [Google] Error on query "${query}":`, err)
+      console.log(`  [Google] Website query error:`, err)
     }
   }
 
   const confidence = Math.min(10, Math.floor(bestScore / 1.5))
   if (bestWebsite) console.log(`  [Google] ✅ Final website: ${bestWebsite} (confidence ${confidence})`)
+  if (bestLinkedin && !bestWebsite) console.log(`  [Google] ✅ LinkedIn only: ${bestLinkedin}`)
 
   return { website: bestWebsite, linkedinUrl: bestLinkedin, confidence }
 }
@@ -493,10 +596,10 @@ export async function enrichCompanyWebsite(
     return { website: null, linkedinUrl: null, industry: null, companySize: null, confidence: 0, source: 'none' }
   }
 
-  // 1. Google Knowledge Graph (FREE, 100k/day, highest accuracy)
+  // 1. Google Knowledge Graph (FREE, high accuracy for notable companies)
   const knowledgeGraph = await tryKnowledgeGraph(companyName, city)
   if (knowledgeGraph.website && knowledgeGraph.confidence >= 6) {
-    console.log(`  ✅ KnowledgeGraph high-confidence result returned early`)
+    console.log(`  ✅ KnowledgeGraph result returned`)
     return {
       website: knowledgeGraph.website,
       linkedinUrl: knowledgeGraph.linkedinUrl,
@@ -507,10 +610,10 @@ export async function enrichCompanyWebsite(
     }
   }
 
-  // 2. DuckDuckGo (FREE, fast, good fallback)
+  // 2. DuckDuckGo (FREE, good fallback with improved LinkedIn detection)
   const duckduckgo = await tryDuckDuckGo(companyName, city)
-  if (duckduckgo.website && duckduckgo.confidence >= 7) {
-    console.log(`  ✅ DuckDuckGo high-confidence result returned early`)
+  if (duckduckgo.website && duckduckgo.confidence >= 6) {
+    console.log(`  ✅ DuckDuckGo result returned`)
     return {
       website: duckduckgo.website,
       linkedinUrl: duckduckgo.linkedinUrl,
@@ -523,18 +626,18 @@ export async function enrichCompanyWebsite(
 
   // 3. Clearbit
   const clearbit = await tryClearbit(companyName)
-  if (clearbit.website && clearbit.confidence >= 7) {
-    console.log(`  ✅ Clearbit high-confidence result returned early`)
+  if (clearbit.website && clearbit.confidence >= 6) {
+    console.log(`  ✅ Clearbit result returned`)
     return { ...clearbit, source: 'clearbit' }
   }
 
   // 4. Hunter.io
   const hunter = await tryHunter(companyName, city)
 
-  // 5. Google Search (fallback)
+  // 5. Google Search (last resort)
   const google = await tryGoogleSearch(companyName, city)
 
-  // ── Merge: prefer highest confidence ──────────────────────────────────────
+  // ── Merge results ──────────────────────────────────────────────────────────
   const candidates = [
     { website: knowledgeGraph.website, linkedinUrl: knowledgeGraph.linkedinUrl, confidence: knowledgeGraph.confidence, source: 'knowledgegraph' as const },
     { website: duckduckgo.website, linkedinUrl: duckduckgo.linkedinUrl, confidence: duckduckgo.confidence, source: 'duckduckgo' as const },
@@ -546,7 +649,17 @@ export async function enrichCompanyWebsite(
     .sort((a, b) => b.confidence - a.confidence)
 
   const best = candidates[0]
-  const finalLinkedin = knowledgeGraph.linkedinUrl ?? clearbit.linkedinUrl ?? google.linkedinUrl ?? duckduckgo.linkedinUrl ?? hunter.linkedinUrl ?? null
+  
+  // Collect LinkedIn from any source
+  const allLinkedinUrls = [
+    knowledgeGraph.linkedinUrl,
+    duckduckgo.linkedinUrl,
+    clearbit.linkedinUrl,
+    google.linkedinUrl,
+    hunter.linkedinUrl,
+  ].filter(Boolean)
+  
+  const finalLinkedin = allLinkedinUrls.length > 0 ? allLinkedinUrls[0] : null
 
   if (!best) {
     console.log(`  ❌ No results found for "${companyName}"`)
@@ -560,8 +673,8 @@ export async function enrichCompanyWebsite(
     }
   }
 
-  console.log(`  🏆 Final: ${best.website} (confidence ${best.confidence}, source: ${best.source})`)
-  if (finalLinkedin) console.log(`  🏆 LinkedIn: ${finalLinkedin}`)
+  console.log(`  🏆 Final website: ${best.website} (confidence ${best.confidence}, source: ${best.source})`)
+  if (finalLinkedin) console.log(`  🏆 Final LinkedIn: ${finalLinkedin}`)
 
   return {
     website: best.website,
