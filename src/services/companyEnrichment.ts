@@ -6,7 +6,7 @@ export interface EnrichedCompanyData {
   industry: string | null
   companySize: string | null
   confidence: number
-  source: 'clearbit' | 'apify' | 'google' | 'none'
+  source: 'knowledgegraph' | 'duckduckgo' | 'clearbit' | 'apify' | 'google' | 'none'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ function extractDomain(url: string): string {
 function normaliseUrl(url: string): string {
   try {
     const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-    return u.origin  // strips paths/query strings for cleaner storage
+    return u.origin
   } catch {
     return url
   }
@@ -43,7 +43,7 @@ const BLOCKED_DOMAINS = [
   'facebook.com', 'instagram.com', 'twitter.com', 'x.com',
   'tiktok.com', 'youtube.com', 'pinterest.com',
   'seek.com.au', 'indeed.com', 'glassdoor.com', 'jora.com',
-  'linkedin.com',  // handled separately
+  'linkedin.com',
   'yellowpages.com.au', 'whitepages.com.au', 'truelocal.com.au',
   'hotfrog.com.au', 'localsearch.com.au', 'yelp.com',
   'wikipedia.org', 'wikimedia.org',
@@ -70,7 +70,207 @@ function domainMatchScore(domain: string, companyName: string): number {
   return 0
 }
 
-// ─── Source: Clearbit (free, no auth) ─────────────────────────────────────────
+// ─── PRIMARY: Google Knowledge Graph API (FREE, 100k/day, highest accuracy) ───
+
+async function tryKnowledgeGraph(
+  companyName: string,
+  city?: string | null
+): Promise<{ website: string | null; linkedinUrl: string | null; industry: string | null; confidence: number }> {
+  const empty = { website: null, linkedinUrl: null, industry: null, confidence: 0 }
+  
+  // Get API key from environment variable
+  const apiKey = import.meta.env.VITE_GOOGLE_KNOWLEDGE_GRAPH_API_KEY
+  if (!apiKey) {
+    console.log(`  [KnowledgeGraph] No API key configured. Get one from Google Cloud Console (free).`)
+    return empty
+  }
+
+  try {
+    const cleanName = cleanCompanyName(companyName)
+    console.log(`  [KnowledgeGraph] Searching: "${cleanName}"`)
+
+    // Add location context to improve results for Australian companies
+    const query = city && city.toLowerCase() !== 'australia' && city.length > 2
+      ? `${cleanName} ${city}`
+      : `${cleanName} Australia`
+
+    const response = await fetch(
+      `https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(query)}&key=${apiKey}&limit=3&types=Organization&indent=True`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+
+    if (!response.ok) {
+      console.log(`  [KnowledgeGraph] HTTP ${response.status}`)
+      return empty
+    }
+
+    const data = await response.json()
+    
+    if (!data.itemListElement || data.itemListElement.length === 0) {
+      console.log(`  [KnowledgeGraph] No results found`)
+      return empty
+    }
+
+    // Find the best match (prefer Australian entities)
+    let bestMatch = null
+    let bestScore = 0
+
+    for (const item of data.itemListElement) {
+      const result = item.result
+      const name = result.name || ''
+      const detailedDescription = result.detailedDescription?.url || null
+      const url = result.url || result.sameAs?.find((u: string) => u.includes('.com')) || null
+      
+      // Calculate match score
+      let score = 0
+      if (name.toLowerCase().includes(cleanName.toLowerCase())) score += 5
+      if (url && url.includes('.com.au')) score += 3  // Prefer .com.au
+      if (url && extractDomain(url).includes(cleanName.toLowerCase().replace(/\s/g, ''))) score += 4
+      
+      if (score > bestScore) {
+        bestScore = score
+        bestMatch = result
+      }
+    }
+
+    if (!bestMatch) {
+      console.log(`  [KnowledgeGraph] No good match found`)
+      return empty
+    }
+
+    // Extract website from various possible fields
+    let website = bestMatch.url || null
+    if (!website && bestMatch.sameAs) {
+      const sameAs = Array.isArray(bestMatch.sameAs) ? bestMatch.sameAs : [bestMatch.sameAs]
+      website = sameAs.find((u: string) => 
+        u && !u.includes('wikipedia.org') && !u.includes('facebook.com') && !u.includes('twitter.com')
+      ) || null
+    }
+
+    // Try to find LinkedIn from sameAs
+    let linkedinUrl = null
+    if (bestMatch.sameAs) {
+      const sameAs = Array.isArray(bestMatch.sameAs) ? bestMatch.sameAs : [bestMatch.sameAs]
+      linkedinUrl = sameAs.find((u: string) => u && u.includes('linkedin.com/company/')) || null
+    }
+
+    if (website) {
+      website = normaliseUrl(website)
+      const confidence = Math.min(10, 7 + Math.floor(bestScore / 2))
+      console.log(`  [KnowledgeGraph] ✅ ${website} (confidence ${confidence})`)
+      if (linkedinUrl) console.log(`  [KnowledgeGraph] ✅ LinkedIn: ${linkedinUrl}`)
+      
+      return {
+        website,
+        linkedinUrl,
+        industry: bestMatch.description || null,
+        confidence,
+      }
+    }
+
+    return empty
+
+  } catch (error) {
+    console.log(`  [KnowledgeGraph] Error:`, error)
+    return empty
+  }
+}
+
+// ─── Source: DuckDuckGo (FREE, no API key, no CORS, fast fallback) ───────────
+
+async function tryDuckDuckGo(
+  companyName: string,
+  city?: string | null
+): Promise<{ website: string | null; linkedinUrl: string | null; confidence: number }> {
+  const empty = { website: null, linkedinUrl: null, confidence: 0 }
+  
+  try {
+    const cleanName = cleanCompanyName(companyName)
+    const locationPart = city && city.toLowerCase() !== 'australia' && city.length > 2
+      ? ` ${city}`
+      : ' Australia'
+    
+    const queries = [
+      `${cleanName}${locationPart} company official website`,
+      `${cleanName}${locationPart} linkedin`,
+      `${cleanName} .com.au`,
+    ]
+    
+    let bestWebsite: string | null = null
+    let bestLinkedin: string | null = null
+    let bestScore = 0
+    
+    for (const query of queries) {
+      console.log(`  [DuckDuckGo] Query: "${query}"`)
+      
+      const response = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow-enrichment`,
+        { signal: AbortSignal.timeout(6000) }
+      )
+      
+      if (!response.ok) continue
+      
+      const data = await response.json()
+      
+      const urls: string[] = []
+      
+      if (data.AbstractURL) urls.push(data.AbstractURL)
+      if (data.Redirect) urls.push(data.Redirect)
+      if (data.Results) {
+        for (const result of data.Results) {
+          if (result.FirstURL) urls.push(result.FirstURL)
+        }
+      }
+      if (data.RelatedTopics) {
+        for (const topic of data.RelatedTopics) {
+          if (topic.FirstURL) urls.push(topic.FirstURL)
+          if (topic.Results) {
+            for (const sub of topic.Results) {
+              if (sub.FirstURL) urls.push(sub.FirstURL)
+            }
+          }
+        }
+      }
+      
+      for (const url of urls) {
+        if (!url || !url.startsWith('http')) continue
+        
+        if (!bestLinkedin && url.includes('linkedin.com/company/')) {
+          bestLinkedin = url.split('?')[0]
+          console.log(`  [DuckDuckGo] ✅ LinkedIn: ${bestLinkedin}`)
+        }
+        
+        if (isBlockedUrl(url)) continue
+        
+        const domain = extractDomain(url)
+        if (!domain) continue
+        
+        let score = domainMatchScore(domain, companyName)
+        if (url.includes('.com.au')) score += 2
+        if (url.includes('.au')) score += 1
+        
+        if (score > bestScore) {
+          bestScore = score
+          bestWebsite = normaliseUrl(url)
+          console.log(`  [DuckDuckGo] 📍 Candidate: ${bestWebsite} (score ${score})`)
+        }
+      }
+      
+      if (bestScore >= 8 && bestLinkedin) break
+    }
+    
+    const confidence = Math.min(10, Math.floor(bestScore / 1.5))
+    if (bestWebsite) console.log(`  [DuckDuckGo] ✅ Final: ${bestWebsite} (confidence ${confidence})`)
+    
+    return { website: bestWebsite, linkedinUrl: bestLinkedin, confidence }
+    
+  } catch (error) {
+    console.log(`  [DuckDuckGo] Error:`, error)
+    return empty
+  }
+}
+
+// ─── Source: Clearbit ─────────────────────────────────────────────────────────
 
 async function tryClearbit(companyName: string): Promise<{
   website: string | null; linkedinUrl: string | null
@@ -121,16 +321,14 @@ async function tryClearbit(companyName: string): Promise<{
   }
 }
 
-// ─── Source: Hunter.io (free tier, no auth needed for basic lookup) ─────────────
+// ─── Source: Hunter.io ────────────────────────────────────────────────────────
 
 async function tryHunter(companyName: string, city?: string | null): Promise<{
   website: string | null; linkedinUrl: string | null; confidence: number
 }> {
-  // Hunter domain search doesn't need an API key for basic use
   const empty = { website: null, linkedinUrl: null, confidence: 0 }
   try {
     const clean = cleanCompanyName(companyName)
-    // Hunter's free autocomplete endpoint
     const res = await fetch(
       `https://api.hunter.io/v2/domains/search?query=${encodeURIComponent(clean)}`,
       { signal: AbortSignal.timeout(6000) }
@@ -148,7 +346,7 @@ async function tryHunter(companyName: string, city?: string | null): Promise<{
   }
 }
 
-// ─── Source: Google Custom Search via SerpAPI public endpoint ─────────────────
+// ─── Source: Google Search (Apify) - Last Resort ──────────────────────────────
 
 async function tryGoogleSearch(
   companyName: string,
@@ -156,14 +354,12 @@ async function tryGoogleSearch(
 ): Promise<{ website: string | null; linkedinUrl: string | null; confidence: number }> {
   const empty = { website: null, linkedinUrl: null, confidence: 0 }
 
-  // Try to get Apify token from settings for authenticated requests
   let apifyToken: string | null = null
   try {
-    // Dynamically import to avoid hard dependency
     const { getApifyToken } = await import('./settingsService')
     apifyToken = await getApifyToken()
   } catch {
-    // settingsService not available – continue without token
+    // settingsService not available
   }
 
   const cleanName = cleanCompanyName(companyName)
@@ -171,7 +367,6 @@ async function tryGoogleSearch(
     ? ` ${city}`
     : ' Australia'
 
-  // Ordered search strategies — most specific first
   const queries = [
     `"${cleanName}"${locationSuffix} official website`,
     `${cleanName}${locationSuffix} site:.com.au`,
@@ -190,7 +385,6 @@ async function tryGoogleSearch(
       let items: Array<{ link?: string; url?: string; title?: string }> = []
 
       if (apifyToken) {
-        // ── Apify Google Search Scraper ──────────────────────────────────────
         const startRes = await fetch(
           `https://api.apify.com/v2/acts/apify~google-search-scraper/runs?token=${apifyToken}`,
           {
@@ -210,7 +404,6 @@ async function tryGoogleSearch(
         const { data: runData } = await startRes.json()
         const runId = runData.id
 
-        // Poll for completion (max 30s)
         let status = 'RUNNING'
         for (let i = 0; i < 15 && status === 'RUNNING'; i++) {
           await new Promise(r => setTimeout(r, 2000))
@@ -225,19 +418,16 @@ async function tryGoogleSearch(
         )
         const rawItems = await datasetRes.json()
 
-        // Apify returns an array of search-result pages; each page has an `organicResults` array
         for (const page of rawItems) {
           const organic: Array<{ url?: string; link?: string }> = page.organicResults ?? page.results ?? []
           items.push(...organic)
         }
-        // Also accept flat arrays (some scraper versions)
         if (items.length === 0 && Array.isArray(rawItems)) {
           items = rawItems
         }
       } else {
-        // ── Fallback: DuckDuckGo Instant Answer (CORS-friendly, no key needed) ─
         const ddgRes = await fetch(
-          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=claude-enrichment`,
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow-enrichment`,
           { signal: AbortSignal.timeout(6000) }
         )
         if (ddgRes.ok) {
@@ -252,25 +442,22 @@ async function tryGoogleSearch(
         }
       }
 
-      // ── Score each result ────────────────────────────────────────────────
       for (const item of items) {
         const rawUrl: string = item.link ?? item.url ?? ''
         if (!rawUrl || !rawUrl.startsWith('http')) continue
 
-        // LinkedIn extraction (separate from website)
         if (!bestLinkedin && rawUrl.includes('linkedin.com/company/')) {
-          bestLinkedin = rawUrl.split('?')[0] // strip query params
+          bestLinkedin = rawUrl.split('?')[0]
           console.log(`  [Google] ✅ LinkedIn: ${bestLinkedin}`)
         }
 
-        // Skip blocked domains for website
         if (isBlockedUrl(rawUrl)) continue
 
         const domain = extractDomain(rawUrl)
         if (!domain) continue
 
         let score = domainMatchScore(domain, companyName)
-        if (rawUrl.includes('.com.au')) score += 2   // prefer AU domains
+        if (rawUrl.includes('.com.au')) score += 2
         if (rawUrl.includes('.au')) score += 1
 
         if (score > bestScore) {
@@ -280,7 +467,6 @@ async function tryGoogleSearch(
         }
       }
 
-      // If we have a high-confidence result, stop trying more queries
       if (bestScore >= 8 && bestLinkedin) break
       if (bestScore >= 10) break
 
@@ -307,22 +493,51 @@ export async function enrichCompanyWebsite(
     return { website: null, linkedinUrl: null, industry: null, companySize: null, confidence: 0, source: 'none' }
   }
 
-  // 1. Clearbit (free, fast, very accurate)
+  // 1. Google Knowledge Graph (FREE, 100k/day, highest accuracy)
+  const knowledgeGraph = await tryKnowledgeGraph(companyName, city)
+  if (knowledgeGraph.website && knowledgeGraph.confidence >= 6) {
+    console.log(`  ✅ KnowledgeGraph high-confidence result returned early`)
+    return {
+      website: knowledgeGraph.website,
+      linkedinUrl: knowledgeGraph.linkedinUrl,
+      industry: knowledgeGraph.industry,
+      companySize: null,
+      confidence: knowledgeGraph.confidence,
+      source: 'knowledgegraph',
+    }
+  }
+
+  // 2. DuckDuckGo (FREE, fast, good fallback)
+  const duckduckgo = await tryDuckDuckGo(companyName, city)
+  if (duckduckgo.website && duckduckgo.confidence >= 7) {
+    console.log(`  ✅ DuckDuckGo high-confidence result returned early`)
+    return {
+      website: duckduckgo.website,
+      linkedinUrl: duckduckgo.linkedinUrl,
+      industry: null,
+      companySize: null,
+      confidence: duckduckgo.confidence,
+      source: 'duckduckgo',
+    }
+  }
+
+  // 3. Clearbit
   const clearbit = await tryClearbit(companyName)
-  // If Clearbit returns a high-confidence result, return early
   if (clearbit.website && clearbit.confidence >= 7) {
     console.log(`  ✅ Clearbit high-confidence result returned early`)
     return { ...clearbit, source: 'clearbit' }
   }
 
-  // 2. Hunter.io basic lookup
+  // 4. Hunter.io
   const hunter = await tryHunter(companyName, city)
 
-  // 3. Google / Apify / DuckDuckGo
+  // 5. Google Search (fallback)
   const google = await tryGoogleSearch(companyName, city)
 
   // ── Merge: prefer highest confidence ──────────────────────────────────────
   const candidates = [
+    { website: knowledgeGraph.website, linkedinUrl: knowledgeGraph.linkedinUrl, confidence: knowledgeGraph.confidence, source: 'knowledgegraph' as const },
+    { website: duckduckgo.website, linkedinUrl: duckduckgo.linkedinUrl, confidence: duckduckgo.confidence, source: 'duckduckgo' as const },
     { website: clearbit.website, linkedinUrl: clearbit.linkedinUrl, confidence: clearbit.confidence, source: 'clearbit' as const },
     { website: hunter.website, linkedinUrl: hunter.linkedinUrl, confidence: hunter.confidence, source: 'apify' as const },
     { website: google.website, linkedinUrl: google.linkedinUrl, confidence: google.confidence, source: 'google' as const },
@@ -331,14 +546,14 @@ export async function enrichCompanyWebsite(
     .sort((a, b) => b.confidence - a.confidence)
 
   const best = candidates[0]
-  const finalLinkedin = clearbit.linkedinUrl ?? google.linkedinUrl ?? hunter.linkedinUrl ?? null
+  const finalLinkedin = knowledgeGraph.linkedinUrl ?? clearbit.linkedinUrl ?? google.linkedinUrl ?? duckduckgo.linkedinUrl ?? hunter.linkedinUrl ?? null
 
   if (!best) {
     console.log(`  ❌ No results found for "${companyName}"`)
     return {
       website: null,
       linkedinUrl: finalLinkedin,
-      industry: clearbit.industry,
+      industry: clearbit.industry ?? knowledgeGraph.industry,
       companySize: clearbit.companySize,
       confidence: 0,
       source: 'none',
@@ -351,7 +566,7 @@ export async function enrichCompanyWebsite(
   return {
     website: best.website,
     linkedinUrl: finalLinkedin,
-    industry: clearbit.industry ?? null,
+    industry: clearbit.industry ?? knowledgeGraph.industry ?? null,
     companySize: clearbit.companySize ?? null,
     confidence: best.confidence,
     source: best.source,

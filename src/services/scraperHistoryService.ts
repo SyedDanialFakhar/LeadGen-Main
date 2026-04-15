@@ -1,6 +1,15 @@
 // src/services/scraperHistoryService.ts
 import { supabase } from '@/lib/supabaseClient'
 
+export interface FilteredJobRecord {
+  companyName: string
+  jobTitle: string
+  reason: string
+  category: string
+  confidence: number
+  jobLink?: string
+}
+
 export interface ScraperHistoryItem {
   id: string
   created_at: string
@@ -14,6 +23,7 @@ export interface ScraperHistoryItem {
   completed_at: string | null
   error_message: string | null
   apify_run_id: string | null
+  filtered_jobs: FilteredJobRecord[] | null  // NEW: detailed filter records
 }
 
 export async function createScraperHistory(
@@ -29,6 +39,7 @@ export async function createScraperHistory(
       status: 'running',
       started_at: new Date().toISOString(),
       apify_run_id: apifyRunId || null,
+      filtered_jobs: null,
     })
     .select('id')
     .single()
@@ -46,6 +57,7 @@ export async function updateScraperHistory(
     jobs_filtered?: number
     completed_at?: string
     error_message?: string
+    filtered_jobs?: FilteredJobRecord[]
   }
 ): Promise<void> {
   const { error } = await supabase

@@ -11,7 +11,7 @@ export interface EnrichmentResult {
   website: string | null
   linkedinUrl: string | null
   confidence: number
-  source: 'clearbit' | 'apify' | 'google' | 'none'
+  source: 'clearbit' | 'apify' | 'google' | 'duckduckgo' | 'none'  // ADDED 'duckduckgo'
   // existing values so user can compare
   existingWebsite: string | null
   existingLinkedin: string | null
@@ -35,16 +35,20 @@ interface EnrichmentConfirmModalProps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const sourceLabel: Record<string, string> = {
+  knowledgegraph: 'Google Knowledge Graph',
   clearbit: 'Clearbit',
   apify: 'Apify',
   google: 'Google Search',
+  duckduckgo: 'DuckDuckGo',  // ADDED
   none: 'Not found',
 }
 
 const sourceColour: Record<string, string> = {
+  knowledgegraph: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   clearbit: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   apify: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   google: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  duckduckgo: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',  // ADDED
   none: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
 }
 
@@ -315,7 +319,7 @@ export function EnrichmentConfirmModal({
                   {loadingLabel ?? 'Searching company data…'}
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Trying Clearbit → Google Search → DuckDuckGo
+                Trying Google Knowledge Graph → DuckDuckGo → Clearbit → Google Search
                 </p>
               </div>
             </div>
