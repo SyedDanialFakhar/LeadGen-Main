@@ -8,6 +8,7 @@ export interface ScrapeConfig {
   minAgeDays: number
   maxResults?: number
   offset?: number
+  salesOnly?: boolean   // ⭐ ADD THIS LINE
 }
 
 export interface ScrapeRun {

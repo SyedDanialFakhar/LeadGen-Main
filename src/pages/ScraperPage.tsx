@@ -204,7 +204,7 @@ export function ScraperPage() {
         jobTitle: safeString(job.jobTitle) || 'Unknown Position',
         contactName: safeString(job.contactName),
         contactJobTitle: null,
-        contactEmail: job.emails?.[0] || null,
+        contactEmail: job.emails?.[0] || null,matchAssessment: 'High', 
         contactPhone: job.phones?.[0] || null,
         contactLinkedinUrl: null,
         companyEmployeeCount: safeString(job.companySize),

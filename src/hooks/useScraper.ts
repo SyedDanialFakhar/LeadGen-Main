@@ -270,6 +270,7 @@ export function useScraper() {
             minAgeDays: minAgeDays,
             maxResults: maxResults,
             offset: skipPages,
+            salesOnly: salesOnlyFilter,
           }
           addLog(`  🔍 Searching: "${jobTitle}"`)
           try {
@@ -351,6 +352,7 @@ export function useScraper() {
       salesOnlyFilter: boolean = true
     ) => {
       await performSearch(jobTitles, city, maxResults, skipPages, minAgeDays, salesOnlyFilter, 0, false)
+
     },
     [performSearch]
   )
