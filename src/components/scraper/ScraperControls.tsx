@@ -1,21 +1,56 @@
 // src/components/scraper/ScraperControls.tsx
 import { useState } from 'react'
-import { Play, Settings2, Search, Plus, MapPin, AlertCircle, Info } from 'lucide-react'
+import {
+  Play,
+  Settings2,
+  Plus,
+  MapPin,
+  Info,
+  Zap,
+  Calendar,
+  SkipForward,
+  Target,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
 import { MultiSelect } from '@/components/ui/MultiSelect'
 import { CITIES, JOB_ROLES } from '@/utils/constants'
 
 interface ScraperControlsProps {
-  onStart: (jobTitles: string[], city: string, maxResults: number, skipPages: number, minAgeDays: number, salesOnly: boolean) => void
+  onStart: (
+    jobTitles: string[],
+    city: string,
+    maxResults: number,
+    skipPages: number,
+    minAgeDays: number,
+    salesOnly: boolean
+  ) => void
   onLoadMore?: () => void
   isLoading: boolean
   isLoadingMore?: boolean
   hasMore?: boolean
   currentResultCount?: number
 }
+
+const SKIP_OPTIONS = [
+  { value: 0, label: 'Newest First', desc: 'Page 1+' },
+  { value: 5, label: 'Skip 5 pages', desc: '~100 skipped' },
+  { value: 10, label: 'Skip 10 pages', desc: '~200 skipped' },
+  { value: 15, label: 'Skip 15 pages', desc: '~300 skipped' },
+  { value: 20, label: 'Skip 20 pages', desc: '~400 skipped' },
+  { value: 30, label: 'Skip 30 pages', desc: '~600 skipped' },
+]
+
+const DATE_OPTIONS = [
+  { value: 0, label: 'All time' },
+  { value: 7, label: 'Last 7 days' },
+  { value: 14, label: 'Last 14 days' },
+  { value: 21, label: 'Last 21 days' },
+  { value: 30, label: 'Last 30 days' },
+]
 
 export function ScraperControls({
   onStart,
@@ -33,52 +68,16 @@ export function ScraperControls({
   const [customCity, setCustomCity] = useState('')
   const [useCustomCity, setUseCustomCity] = useState(false)
   const [maxResultsPerRun, setMaxResultsPerRun] = useState(20)
-
-  // Skip pages options
   const [skipPages, setSkipPages] = useState(0)
-  const [skip0Enabled, setSkip0Enabled] = useState(true)
-  const [skip5Enabled, setSkip5Enabled] = useState(false)
-  const [skip10Enabled, setSkip10Enabled] = useState(false)
-  const [skip15Enabled, setSkip15Enabled] = useState(false)
-  const [skip20Enabled, setSkip20Enabled] = useState(false)
-  const [skip30Enabled, setSkip30Enabled] = useState(false)
-
-  // Date range options
   const [minAgeDays, setMinAgeDays] = useState(0)
-  const [ageAllEnabled, setAgeAllEnabled] = useState(true)
-  const [age7Enabled, setAge7Enabled] = useState(false)
-  const [age14Enabled, setAge14Enabled] = useState(false)
-  const [age21Enabled, setAge21Enabled] = useState(false)
-  const [age30Enabled, setAge30Enabled] = useState(false)
-
-  // Sales Only filter
   const [salesOnly, setSalesOnly] = useState(true)
-
-  const handleSkipChange = (pages: number) => {
-    setSkip0Enabled(pages === 0)
-    setSkip5Enabled(pages === 5)
-    setSkip10Enabled(pages === 10)
-    setSkip15Enabled(pages === 15)
-    setSkip20Enabled(pages === 20)
-    setSkip30Enabled(pages === 30)
-    setSkipPages(pages)
-  }
-
-  const handleAgeChange = (days: number) => {
-    setAgeAllEnabled(days === 0)
-    setAge7Enabled(days === 7)
-    setAge14Enabled(days === 14)
-    setAge21Enabled(days === 21)
-    setAge30Enabled(days === 30)
-    setMinAgeDays(days)
-  }
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const jobTitles = useCustomRoles ? customRoles : selectedRoles
     const city = useCustomCity ? customCity : selectedCity
     if (jobTitles.length === 0 || !city.trim()) return
-
     onStart(jobTitles, city.trim(), maxResultsPerRun, skipPages, minAgeDays, salesOnly)
   }
 
@@ -90,7 +89,7 @@ export function ScraperControls({
   }
 
   const handleRemoveCustomRole = (role: string) => {
-    setCustomRoles(customRoles.filter(r => r !== role))
+    setCustomRoles(customRoles.filter((r) => r !== role))
   }
 
   const getAllJobTitles = () => (useCustomRoles ? customRoles : selectedRoles)
@@ -100,75 +99,96 @@ export function ScraperControls({
     return selectedCity === 'Australia' ? 'All Australia' : selectedCity
   }
 
-  const getSkipPagesDisplay = () => {
-    if (skipPages === 0) return 'None (newest first)'
-    if (skipPages === 5) return `Skip 5 pages (~100 newest jobs)`
-    if (skipPages === 10) return `Skip 10 pages (~200 newest jobs)`
-    if (skipPages === 15) return `Skip 15 pages (~300 newest jobs)`
-    if (skipPages === 20) return `Skip 20 pages (~400 newest jobs)`
-    if (skipPages === 30) return `Skip 30 pages (~600 newest jobs)`
-    return 'None'
-  }
-
-  const getAgeFilterDisplay = () => {
-    if (minAgeDays === 7) return 'Last 7 days'
-    if (minAgeDays === 14) return 'Last 14 days'
-    if (minAgeDays === 21) return 'Last 21 days'
-    if (minAgeDays === 30) return 'Last 30 days'
-    return 'All jobs (no date filter)'
-  }
+  const canSubmit =
+    !isLoading && getAllJobTitles().length > 0 && !(useCustomCity && !customCity.trim())
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Settings2 className="w-4 h-4 text-slate-500" />
-          <h3 className="font-semibold text-slate-900 dark:text-white">Scraper Configuration</h3>
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-slate-50 to-white dark:from-slate-800/50 dark:to-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
+              <Settings2 className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">
+                Scraper Configuration
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Sales filter applied at Seek level — faster &amp; more accurate
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-full border border-emerald-200 dark:border-emerald-800">
+            <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              ~20s target
+            </span>
+          </div>
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Search for jobs across ANY Australian city — filters are applied server-side to save credits
-        </p>
       </CardHeader>
-      <CardBody>
-        <form onSubmit={handleSubmit} className="space-y-4">
 
-          {/* Job Role Selection */}
+      <CardBody>
+        <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* ── Job Roles ────────────────────────────────────────────────── */}
           <div className="space-y-3">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={!useCustomRoles} onChange={() => setUseCustomRoles(false)} />
-                <span className="text-sm text-slate-700 dark:text-slate-300">Select from list</span>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Target className="w-4 h-4 text-blue-500" />
+                Job Titles
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={useCustomRoles} onChange={() => setUseCustomRoles(true)} />
-                <span className="text-sm text-slate-700 dark:text-slate-300">Custom titles</span>
-              </label>
+              <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setUseCustomRoles(false)}
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                    !useCustomRoles
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                  }`}
+                >
+                  Preset list
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseCustomRoles(true)}
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                    useCustomRoles
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
             </div>
 
             {!useCustomRoles ? (
               <MultiSelect
-                label="Job Titles (Select multiple)"
+                label=""
                 options={JOB_ROLES}
                 selected={selectedRoles}
                 onChange={setSelectedRoles}
-                placeholder="Select job titles to search for..."
+                placeholder="Select job titles to search..."
                 disabled={isLoading}
-                helperText={`${selectedRoles.length} job title(s) selected`}
+                helperText={`${selectedRoles.length} title${selectedRoles.length !== 1 ? 's' : ''} selected`}
               />
             ) : (
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Custom Job Titles
-                </label>
+              <div className="space-y-2">
                 {customRoles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 p-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                    {customRoles.map(role => (
+                  <div className="flex flex-wrap gap-1.5 p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                    {customRoles.map((role) => (
                       <span
                         key={role}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium"
                       >
                         {role}
-                        <button type="button" onClick={() => handleRemoveCustomRole(role)} className="hover:text-blue-900">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomRole(role)}
+                          className="hover:text-blue-900 dark:hover:text-blue-100"
+                        >
                           <Plus className="w-3 h-3 rotate-45" />
                         </button>
                       </span>
@@ -179,14 +199,19 @@ export function ScraperControls({
                   <Input
                     placeholder="Enter custom job title..."
                     value={currentCustomRole}
-                    onChange={e => setCurrentCustomRole(e.target.value)}
+                    onChange={(e) => setCurrentCustomRole(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleAddCustomRole()
+                      }
+                    }}
                     disabled={isLoading}
                     className="flex-1"
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
                     onClick={handleAddCustomRole}
                     disabled={!currentCustomRole.trim() || isLoading}
                     leftIcon={<Plus className="w-4 h-4" />}
@@ -194,273 +219,271 @@ export function ScraperControls({
                     Add
                   </Button>
                 </div>
-                {customRoles.length === 0 && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> Add at least one custom job title
-                  </p>
-                )}
               </div>
             )}
           </div>
 
-          {/* Location Selection */}
+          {/* ── Location ─────────────────────────────────────────────────── */}
           <div className="space-y-3">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={!useCustomCity} onChange={() => setUseCustomCity(false)} />
-                <span className="text-sm text-slate-700 dark:text-slate-300">Select from list</span>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-blue-500" />
+                Location
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" checked={useCustomCity} onChange={() => setUseCustomCity(true)} />
-                <span className="text-sm text-slate-700 dark:text-slate-300">Enter custom city</span>
-              </label>
+              <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setUseCustomCity(false)}
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                    !useCustomCity
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  Preset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseCustomCity(true)}
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                    useCustomCity
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
             </div>
 
             {!useCustomCity ? (
-              <Select
-                label="City / Location"
-                value={selectedCity}
-                onChange={e => setSelectedCity(e.target.value)}
-                options={CITIES.map(c => ({ value: c, label: c === 'Australia' ? 'All Australia' : c }))}
-                disabled={isLoading}
-                helperText="Select a city or 'All Australia'"
-              />
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {['Australia', 'Melbourne', 'Sydney', 'Brisbane', 'Perth', 'Adelaide', 'Gold Coast', 'Other'].map(
+                  (city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() => {
+                        if (city === 'Other') {
+                          setUseCustomCity(true)
+                        } else {
+                          setSelectedCity(city)
+                        }
+                      }}
+                      className={`px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
+                        selectedCity === city && !useCustomCity
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300 dark:hover:border-blue-600'
+                      }`}
+                      disabled={isLoading}
+                    >
+                      {city === 'Australia' ? '🌏 Australia' : city}
+                    </button>
+                  )
+                )}
+              </div>
             ) : (
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={customCity}
-                  onChange={e => setCustomCity(e.target.value)}
-                  placeholder="e.g., Gold Coast, Newcastle, Wollongong"
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <Input
+                placeholder="e.g. Cairns QLD, Wollongong NSW..."
+                value={customCity}
+                onChange={(e) => setCustomCity(e.target.value)}
+                disabled={isLoading}
+                leftIcon={<MapPin className="w-4 h-4 text-slate-400" />}
+              />
+            )}
+          </div>
+
+          {/* ── Sales Classification Notice ───────────────────────────────── */}
+          <div className="flex items-start gap-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+            <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                Sales Filter: Applied at Seek level (faster)
+              </p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                Classification ID 1209 is baked into the Seek URL — Apify only fetches Sales jobs.
+                Previously: scrape 20, keep 11. Now: scrape 20 Sales jobs directly.
+              </p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setSalesOnly(true)}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                    salesOnly
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-emerald-300'
+                  }`}
+                >
+                  ✅ Sales Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSalesOnly(false)}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
+                    !salesOnly
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                  }`}
+                >
+                  📂 All Classifications
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Max Results ───────────────────────────────────────────────── */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              Max Results per Job Title
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {[10, 20, 30, 50].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMaxResultsPerRun(n)}
+                  className={`py-2 text-sm font-medium rounded-xl border transition-all ${
+                    maxResultsPerRun === n
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                  }`}
                   disabled={isLoading}
-                />
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Advanced Options (collapsible) ────────────────────────────── */}
+          <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm font-medium text-slate-700 dark:text-slate-300"
+            >
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                Advanced Options
+                {(skipPages > 0 || minAgeDays > 0) && (
+                  <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full text-xs">
+                    Active
+                  </span>
+                )}
+              </div>
+              {showAdvanced ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {showAdvanced && (
+              <div className="p-4 space-y-4 border-t border-slate-200 dark:border-slate-700">
+                {/* Skip Pages */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 uppercase tracking-wide">
+                    <SkipForward className="w-3.5 h-3.5" />
+                    Skip Pages (for older jobs)
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {SKIP_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSkipPages(opt.value)}
+                        className={`px-2 py-2 text-xs rounded-lg border transition-all text-left ${
+                          skipPages === opt.value
+                            ? 'bg-orange-100 dark:bg-orange-900/30 border-orange-400 dark:border-orange-600 text-orange-800 dark:text-orange-300'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-orange-300'
+                        }`}
+                        disabled={isLoading}
+                      >
+                        <div className="font-medium">{opt.label}</div>
+                        <div className="text-slate-400 dark:text-slate-500">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Date Range */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Date Range
+                  </label>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {DATE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setMinAgeDays(opt.value)}
+                        className={`py-2 text-xs rounded-lg border transition-all font-medium ${
+                          minAgeDays === opt.value
+                            ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-300'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                        }`}
+                        disabled={isLoading}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Results per Search */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Results per Job Title
-            </label>
-            <div className="flex flex-wrap gap-4">
-              {[20, 50, 100].map(n => (
-                <label key={n} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={maxResultsPerRun === n}
-                    onChange={() => setMaxResultsPerRun(n)}
-                  />
-                  <span className="text-sm">
-                    {n} results {n === 20 ? '(Lowest cost)' : n === 50 ? '(Medium)' : '(Highest cost)'}
-                  </span>
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-slate-500">💡 Lower results = lower Apify credit usage</p>
+          {/* ── Summary Bar ───────────────────────────────────────────────── */}
+          <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50 text-xs text-blue-700 dark:text-blue-300 flex-wrap">
+            <span className="font-semibold">Search:</span>
+            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 rounded-full">
+              {getAllJobTitles().length} title{getAllJobTitles().length !== 1 ? 's' : ''}
+            </span>
+            <span>in</span>
+            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 rounded-full">
+              {getCityDisplay()}
+            </span>
+            <span>·</span>
+            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 rounded-full">
+              {maxResultsPerRun} results
+            </span>
+            {salesOnly && (
+              <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-full">
+                Sales only
+              </span>
+            )}
           </div>
 
-          {/* Skip Pages Section */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Skip Recent Jobs (Get Older Jobs)
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip0Enabled}
-                  onChange={() => handleSkipChange(0)}
-                />
-                <span className="text-sm">None (newest first)</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip5Enabled}
-                  onChange={() => handleSkipChange(5)}
-                />
-                <span className="text-sm">Skip 5 pages</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip10Enabled}
-                  onChange={() => handleSkipChange(10)}
-                />
-                <span className="text-sm">Skip 10 pages</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip15Enabled}
-                  onChange={() => handleSkipChange(15)}
-                />
-                <span className="text-sm">Skip 15 pages</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip20Enabled}
-                  onChange={() => handleSkipChange(20)}
-                />
-                <span className="text-sm">Skip 20 pages</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="skipPages"
-                  checked={skip30Enabled}
-                  onChange={() => handleSkipChange(30)}
-                />
-                <span className="text-sm">Skip 30 pages</span>
-              </label>
-            </div>
-            <p className="text-xs text-orange-600 dark:text-orange-400">{getSkipPagesDisplay()}</p>
+          {/* ── Always-active filters ─────────────────────────────────────── */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {[
+              '🚫 No recruitment agencies',
+              '📝 No "no agency" disclaimers',
+              '🏢 No private advertisers',
+              '⚖️ No law firms',
+            ].map((filter) => (
+              <span
+                key={filter}
+                className="px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg border border-green-200 dark:border-green-800"
+              >
+                {filter}
+              </span>
+            ))}
           </div>
 
-          {/* Date Range Section */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Date Range Filter
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="ageFilter"
-                  checked={ageAllEnabled}
-                  onChange={() => handleAgeChange(0)}
-                />
-                <span className="text-sm">All jobs</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="ageFilter"
-                  checked={age7Enabled}
-                  onChange={() => handleAgeChange(7)}
-                />
-                <span className="text-sm">Last 7 days</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="ageFilter"
-                  checked={age14Enabled}
-                  onChange={() => handleAgeChange(14)}
-                />
-                <span className="text-sm">Last 14 days</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="ageFilter"
-                  checked={age21Enabled}
-                  onChange={() => handleAgeChange(21)}
-                />
-                <span className="text-sm">Last 21 days</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="ageFilter"
-                  checked={age30Enabled}
-                  onChange={() => handleAgeChange(30)}
-                />
-                <span className="text-sm">Last 30 days</span>
-              </label>
-            </div>
-            <p className="text-xs text-blue-600 dark:text-blue-400">{getAgeFilterDisplay()}</p>
-          </div>
-
-          {/* NEW: Sales Only Toggle */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Job Classification Filter
-            </label>
-            <div className="flex gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="salesOnly"
-                  checked={salesOnly}
-                  onChange={() => setSalesOnly(true)}
-                />
-                <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">✅ Sales Only</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="salesOnly"
-                  checked={!salesOnly}
-                  onChange={() => setSalesOnly(false)}
-                />
-                <span className="text-sm text-slate-600 dark:text-slate-400">📂 All Classifications</span>
-              </label>
-            </div>
-            <p className="text-xs text-slate-500">
-              {salesOnly 
-                ? '🔍 Only showing jobs with "Sales" in classification' 
-                : '📋 Showing all jobs regardless of classification'}
-            </p>
-          </div>
-
-          {/* Info Box */}
-          <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-300">
-            <Info className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>
-              <strong>How filters work with websift/seek-scraper:</strong>
-              <br />• <strong>Skip pages</strong> — Starts from page X, skipping newer jobs
-              <br />• <strong>Date range</strong> — Limits to jobs from last X days
-              <br />• <strong>Sales Only</strong> — Filters jobs by classification (applied after scraping)
-              <br />• Both server-side filters are applied BEFORE scraping to save credits
-            </div>
-          </div>
-
-          {/* Summary */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-xs space-y-1">
-            <p className="font-medium text-blue-800 dark:text-blue-300 mb-1">🔍 Search Summary</p>
-            <p>📌 Job Titles: {getAllJobTitles().length} selected</p>
-            <p>📍 Location: {getCityDisplay()}</p>
-            <p>📊 Max Results: {maxResultsPerRun} per job title</p>
-            <p>⏩ {getSkipPagesDisplay()}</p>
-            <p>📅 {getAgeFilterDisplay()}</p>
-            <p>📂 {salesOnly ? 'Sales Only' : 'All Classifications'}</p>
-          </div>
-
-          {/* Always-active filters */}
-          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-xs">
-            <p className="font-medium text-green-800 dark:text-green-300 mb-1">✅ Always Active Filters</p>
-            <p>• 🚫 No recruitment agencies</p>
-            <p>• 📝 No "no agency" disclaimers</p>
-            <p>• 🏢 No "Private Advertiser" listings</p>
-            {salesOnly && <p>• 📂 Only Sales classification jobs</p>}
-          </div>
-
+          {/* ── Submit ────────────────────────────────────────────────────── */}
           <Button
             type="submit"
-            onClick={handleSubmit}
             isLoading={isLoading}
             leftIcon={<Play className="w-4 h-4" />}
             className="w-full"
             size="lg"
-            disabled={
-              isLoading ||
-              getAllJobTitles().length === 0 ||
-              (useCustomCity && !customCity.trim())
-            }
+            disabled={!canSubmit}
           >
             {isLoading
               ? 'Scraping...'
-              : `Search ${getAllJobTitles().length} Job Title${getAllJobTitles().length !== 1 ? 's' : ''} in ${getCityDisplay()}`}
+              : `Search ${getAllJobTitles().length} Title${getAllJobTitles().length !== 1 ? 's' : ''} in ${getCityDisplay()}`}
           </Button>
 
           {onLoadMore && hasMore && !isLoading && (
@@ -471,17 +494,11 @@ export function ScraperControls({
               variant="outline"
               className="w-full"
             >
-              {isLoadingMore ? 'Loading More...' : `Load More Results (${currentResultCount} shown so far)`}
+              {isLoadingMore
+                ? 'Loading More...'
+                : `Load More Results (${currentResultCount} shown so far)`}
             </Button>
           )}
-
-          <div className="text-xs text-slate-500 dark:text-slate-400 text-center space-y-1">
-            <p>🌏 Supports ANY Australian city</p>
-            <p>📊 Limited to {maxResultsPerRun} results per job title to save API credits</p>
-            <p>⏩ Skip pages to get older jobs</p>
-            <p>📅 Date range limits to last 7/14/21/30 days</p>
-            <p>📂 Sales Only filter removes non-sales jobs from results</p>
-          </div>
         </form>
       </CardBody>
     </Card>

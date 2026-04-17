@@ -28,6 +28,36 @@ interface LeadTableProps {
 const PAGE_SIZE = 20
 type ResponseStatus = 'positive' | 'negative' | 'none'
 
+// ─── Helper to format days ago beautifully ────────────────────────────────────
+const formatDaysAgo = (dateString: string): string => {
+  const date = new Date(dateString)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  date.setHours(0, 0, 0, 0)
+  
+  const diffTime = today.getTime() - date.getTime()
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+  
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+  if (diffDays < 14) return '1 week ago'
+  if (diffDays < 21) return '2 weeks ago'
+  if (diffDays < 30) return '3 weeks ago'
+  if (diffDays < 60) return '1 month ago'
+  if (diffDays < 90) return '2 months ago'
+  if (diffDays < 120) return '3 months ago'
+  return `${Math.floor(diffDays / 30)} months ago`
+}
+
+const getDaysAgoColor = (daysAgo: number): string => {
+  if (daysAgo === 0) return 'text-green-600 dark:text-green-400'
+  if (daysAgo <= 3) return 'text-emerald-600 dark:text-emerald-400'
+  if (daysAgo <= 7) return 'text-yellow-600 dark:text-yellow-400'
+  if (daysAgo <= 14) return 'text-orange-600 dark:text-orange-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
 // ─── Style helpers ────────────────────────────────────────────────────────────
 
 const MATCH_ASSESSMENT_STYLES: Record<MatchAssessment, string> = {
@@ -113,14 +143,14 @@ const EditableLinkCell = ({
           onChange={e => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSave}
-          className="flex-1 px-2 py-1 text-xs rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 px-2 py-1.5 text-sm rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
           placeholder={placeholder}
         />
         <button onClick={handleSave} className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 shrink-0">
-          <Check className="w-3.5 h-3.5" />
+          <Check className="w-4 h-4" />
         </button>
         <button onClick={() => { setEditValue(url || ''); setIsEditing(false) }} className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 shrink-0">
-          <X className="w-3.5 h-3.5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
     )
@@ -133,20 +163,20 @@ const EditableLinkCell = ({
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-xs truncate max-w-[130px]"
+          className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline text-sm truncate max-w-[180px]"
           title={url}
         >
-          <Icon className="w-3 h-3 shrink-0 text-blue-500" />
+          <Icon className="w-4 h-4 shrink-0 text-blue-500" />
           <span className="truncate">
             {url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
           </span>
-          <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" />
+          <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" />
         </a>
         <button
           onClick={e => { e.stopPropagation(); setEditValue(url); setIsEditing(true) }}
           className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5"
         >
-          <Edit2 className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+          <Edit2 className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
         </button>
       </div>
     )
@@ -154,12 +184,12 @@ const EditableLinkCell = ({
 
   return (
     <div className="group flex items-center gap-1" onClick={e => e.stopPropagation()}>
-      <span className="text-xs text-slate-300 dark:text-slate-600 italic">{placeholder}</span>
+      <span className="text-sm text-slate-400 dark:text-slate-500 italic">{placeholder}</span>
       <button
         onClick={e => { e.stopPropagation(); setIsEditing(true) }}
         className="opacity-0 group-hover:opacity-100 transition-opacity"
       >
-        <Edit2 className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+        <Edit2 className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
       </button>
     </div>
   )
@@ -246,7 +276,6 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
   const handleEnrichSelected = async () => {
     if (selected.length === 0) return
 
-    // Open modal immediately in loading state
     setEnrichingLabel(
       selected.length === 1
         ? `Searching data for ${leads.find(l => l.id === selected[0])?.companyName ?? 'company'}…`
@@ -404,15 +433,15 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             onChange={e => setEditingValue(e.target.value)}
             onKeyDown={e => handleKeyDown(e, leadId, field, editingValue, originalValue)}
             onBlur={() => handleSave(leadId, field, editingValue, originalValue)}
-            className="flex-1 px-2 py-1 text-xs rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 px-2 py-1.5 text-sm rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
             placeholder={placeholder}
             onClick={e => e.stopPropagation()}
           />
           <button onClick={e => { e.stopPropagation(); handleSave(leadId, field, editingValue, originalValue) }} className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 dark:hover:bg-green-900/20 shrink-0">
-            <Check className="w-3.5 h-3.5" />
+            <Check className="w-4 h-4" />
           </button>
           <button onClick={e => { e.stopPropagation(); cancelEdit() }} className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0">
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       )
@@ -423,10 +452,10 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         className="group flex items-center gap-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded px-1 py-0.5 transition-colors min-w-[100px]"
         onClick={e => { e.stopPropagation(); startEdit(leadId, field, displayValue) }}
       >
-        <span className="text-slate-600 dark:text-slate-400 text-xs truncate flex-1">
-          {displayValue || <span className="text-slate-300 dark:text-slate-600 italic">{placeholder}</span>}
+        <span className="text-slate-600 dark:text-slate-400 text-sm truncate flex-1">
+          {displayValue || <span className="text-slate-400 dark:text-slate-500 italic">{placeholder}</span>}
         </span>
-        <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+        <Edit2 className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
       </div>
     )
   }
@@ -451,11 +480,11 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
 
       {/* ── Bulk actions bar ── */}
       {selected.length > 0 && (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl shadow-sm">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl shadow-sm">
           <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
             {selected.length} selected
           </span>
-          <div className="h-4 w-px bg-blue-300 dark:bg-blue-600 mx-1" />
+          <div className="h-5 w-px bg-blue-300 dark:bg-blue-600 mx-1" />
 
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500 mr-1">Email:</span>
@@ -475,7 +504,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             </div>
           </div>
 
-          <div className="h-4 w-px bg-blue-300 dark:bg-blue-600" />
+          <div className="h-5 w-px bg-blue-300 dark:bg-blue-600" />
 
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500 mr-1">Response:</span>
@@ -486,7 +515,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
             </div>
           </div>
 
-          <div className="h-4 w-px bg-blue-300 dark:bg-blue-600" />
+          <div className="h-5 w-px bg-blue-300 dark:bg-blue-600" />
 
           <div className="flex gap-1">
             <Button
@@ -513,17 +542,17 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
-              <th className="px-3 py-3 w-10">
+              <th className="px-4 py-3 w-10">
                 <input type="checkbox" checked={selected.length === paginated.length && paginated.length > 0} onChange={toggleAll} className="rounded border-slate-300" />
               </th>
               {[
                 'Lead Added', 'Source', 'City', 'Location', 'Company Name', 'Job Title',
                 'Job Link', 'Date Posted', 'Applicants', 'Contact Name', 'Role Title',
                 'Phone', 'Email', 'LinkedIn', 'Company URL', 'Match Assessment',
-                'Email Status', 'Last Action Date', 'Next Action Days', 'Next Action Date',
+                'Email Status', 'Last Action', 'Next Days', 'Next Date',
                 'Response', 'Ops Comments', "Charlie's Feedback", 'Actions',
               ].map(h => (
-                <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">
                   {h}
                 </th>
               ))}
@@ -532,6 +561,14 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
             {paginated.map(lead => {
               const response = getResponseFromComments(lead.opsComments)
+              const daysAgo = lead.datePosted ? (() => {
+                const date = new Date(lead.datePosted)
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                date.setHours(0, 0, 0, 0)
+                return Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+              })() : 0
+              
               return (
                 <tr
                   key={lead.id}
@@ -543,65 +580,81 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   onClick={() => onRowClick(lead)}
                 >
                   {/* Checkbox */}
-                  <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.includes(lead.id)} onChange={() => toggleSelect(lead.id)} className="rounded border-slate-300" />
                   </td>
 
                   {/* Lead Added */}
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{formatDate(lead.createdAt)}</td>
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{formatDate(lead.createdAt)}</td>
 
                   {/* Source */}
-                  <td className="px-3 py-3"><PlatformBadge platform={lead.platform} /></td>
+                  <td className="px-4 py-3"><PlatformBadge platform={lead.platform} /></td>
 
                   {/* City */}
-                  <td className="px-3 py-3 text-slate-600 dark:text-slate-400 text-xs">{lead.city}</td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-sm">{lead.city}</td>
 
                   {/* Location */}
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400 text-xs">{lead.location || lead.city}</td>
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-sm">{lead.location || lead.city}</td>
 
                   {/* Company Name */}
-                  <td className="px-3 py-3 font-medium text-slate-800 dark:text-slate-200 max-w-[150px] truncate">{lead.companyName}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-800 dark:text-slate-200">
+                      {lead.companyName}
+                    </p>
+                    {lead.classification && (
+                      <span className="text-xs text-slate-400 dark:text-slate-500">{lead.classification}</span>
+                    )}
+                  </td>
 
-                  {/* Job Title */}
-                  <td className="px-3 py-3 text-slate-600 dark:text-slate-400 max-w-[180px] truncate text-xs">{lead.jobTitle}</td>
+                  {/* Job Title - Full text, not truncated */}
+                  <td className="px-4 py-3">
+                    <p className="text-slate-700 dark:text-slate-300 font-medium min-w-[200px] max-w-[300px]">
+                      {lead.jobTitle}
+                    </p>
+                  </td>
 
                   {/* Job Link */}
-                  <td className="px-3 py-3 text-center">
+                  <td className="px-4 py-3 text-center">
                     <a href={lead.jobAdUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 inline-flex items-center gap-1 text-xs"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 inline-flex items-center gap-1 text-sm"
                       title="View job ad">
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-4 h-4" />
                       <span>View</span>
                     </a>
                   </td>
 
                   {/* Date Posted */}
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{formatDate(lead.datePosted)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-slate-600 dark:text-slate-400 text-sm">{formatDate(lead.datePosted)}</span>
+                    </div>
+                  </td>
 
                   {/* Applicants */}
-                  <td className="px-3 py-3">
+                  <td className="px-4 py-3">
                     {lead.applicantCount ? (
                       <div className="flex items-center gap-1">
-                        <Users className="w-3 h-3 text-slate-400" />
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{lead.applicantCount}</span>
+                        <Users className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{lead.applicantCount}</span>
                       </div>
-                    ) : <span className="text-xs text-slate-400">—</span>}
+                    ) : <span className="text-sm text-slate-400">—</span>}
                   </td>
 
                   {/* Contact Name */}
-                  <td className="px-3 py-3 min-w-[120px]">{renderEditableCell(lead.id, 'contactName', lead.contactName, 'Add name')}</td>
+                  <td className="px-4 py-3 min-w-[140px]">{renderEditableCell(lead.id, 'contactName', lead.contactName, 'Add name')}</td>
 
                   {/* Role Title */}
-                  <td className="px-3 py-3 min-w-[120px]">{renderEditableCell(lead.id, 'contactRole', lead.contactJobTitle, 'Add role')}</td>
+                  <td className="px-4 py-3 min-w-[140px]">{renderEditableCell(lead.id, 'contactRole', lead.contactJobTitle, 'Add role')}</td>
 
                   {/* Phone */}
-                  <td className="px-3 py-3 min-w-[120px]">{renderEditableCell(lead.id, 'phone', lead.contactPhone, 'Add phone', 'tel')}</td>
+                  <td className="px-4 py-3 min-w-[130px]">{renderEditableCell(lead.id, 'phone', lead.contactPhone, 'Add phone', 'tel')}</td>
 
                   {/* Email */}
-                  <td className="px-3 py-3 min-w-[150px]">{renderEditableCell(lead.id, 'email', lead.contactEmail, 'Add email', 'email')}</td>
+                  <td className="px-4 py-3 min-w-[180px]">{renderEditableCell(lead.id, 'email', lead.contactEmail, 'Add email', 'email')}</td>
 
-                  {/* LinkedIn — clickable + editable */}
-                  <td className="px-3 py-3 min-w-[150px]">
+                  {/* LinkedIn */}
+                  <td className="px-4 py-3 min-w-[160px]">
                     <EditableLinkCell
                       url={lead.contactLinkedinUrl}
                       onSave={value => updateLead({ id: lead.id, updates: { contactLinkedinUrl: value || null } })}
@@ -610,8 +663,8 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                     />
                   </td>
 
-                  {/* Company URL — clickable + editable */}
-                  <td className="px-3 py-3 min-w-[130px]">
+                  {/* Company URL */}
+                  <td className="px-4 py-3 min-w-[160px]">
                     <EditableLinkCell
                       url={lead.companyWebsite}
                       onSave={value => updateLead({ id: lead.id, updates: { companyWebsite: value || null } })}
@@ -621,23 +674,23 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                   </td>
 
                   {/* Match Assessment */}
-                  <td className="px-3 py-3 min-w-[110px]" onClick={e => e.stopPropagation()}>
+                  <td className="px-4 py-3 min-w-[110px]" onClick={e => e.stopPropagation()}>
                     {editingId === lead.id && editingField === 'matchAssessment' ? (
-                      <div className="flex items-center gap-1 min-w-[140px]">
+                      <div className="flex items-center gap-1 min-w-[150px]">
                         <select
                           ref={inputRef as any}
                           value={editingValue}
                           onChange={e => setEditingValue(e.target.value)}
                           onBlur={() => handleSave(lead.id, 'matchAssessment', editingValue, originalValue)}
-                          className="flex-1 px-2 py-1 text-xs rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="flex-1 px-2 py-1.5 text-sm rounded-lg border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           <option value="">Select…</option>
                           <option value="High">🔥 High Match</option>
                           <option value="Medium">📊 Medium Match</option>
                           <option value="Low">⚠️ Low Match</option>
                         </select>
-                        <button onClick={e => { e.stopPropagation(); handleSave(lead.id, 'matchAssessment', editingValue, originalValue) }} className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 shrink-0"><Check className="w-3.5 h-3.5" /></button>
-                        <button onClick={e => { e.stopPropagation(); cancelEdit() }} className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 shrink-0"><X className="w-3.5 h-3.5" /></button>
+                        <button onClick={e => { e.stopPropagation(); handleSave(lead.id, 'matchAssessment', editingValue, originalValue) }} className="p-1 text-green-600 hover:text-green-700 rounded hover:bg-green-50 shrink-0"><Check className="w-4 h-4" /></button>
+                        <button onClick={e => { e.stopPropagation(); cancelEdit() }} className="p-1 text-red-600 hover:text-red-700 rounded hover:bg-red-50 shrink-0"><X className="w-4 h-4" /></button>
                       </div>
                     ) : (
                       <div
@@ -648,56 +701,62 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                         onClick={() => startEdit(lead.id, 'matchAssessment', lead.matchAssessment)}
                       >
                         {!lead.matchAssessment ? (
-                          <><Star className="w-3.5 h-3.5" /><span className="text-xs">Set match</span></>
+                          <><Star className="w-4 h-4" /><span className="text-sm">Set match</span></>
                         ) : (
-                          <><span className="text-sm">{MATCH_ASSESSMENT_ICONS[lead.matchAssessment]}</span><span className="text-xs font-medium">{lead.matchAssessment}</span></>
+                          <><span className="text-base">{MATCH_ASSESSMENT_ICONS[lead.matchAssessment]}</span><span className="text-sm font-medium">{lead.matchAssessment}</span></>
                         )}
-                        <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
+                        <Edit2 className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
                       </div>
                     )}
                   </td>
 
-                  {/* Email Status */}
-                  <td className="px-3 py-3 min-w-[130px]" onClick={e => e.stopPropagation()}>
+                  {/* Email Status - Improved dropdown with better dark mode */}
+                  <td className="px-4 py-3 min-w-[140px]" onClick={e => e.stopPropagation()}>
                     <select
                       value={lead.status}
                       onChange={e => handleEmailStatusChange(lead, e.target.value as LeadStatus)}
-                      className={cn('px-2 py-1 text-xs rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full', getEmailStatusStyle(lead.status))}
+                      className={cn(
+                        'px-2 py-1.5 text-sm rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full',
+                        'bg-white dark:bg-slate-800',
+                        'border-slate-300 dark:border-slate-600',
+                        'text-slate-700 dark:text-slate-200',
+                        getEmailStatusStyle(lead.status)
+                      )}
                     >
-                      <option value="Not Sent">📧 Not Sent</option>
-                      <option value="Email 1">📧 Email 1 Sent</option>
-                      <option value="Email 2">📧 Email 2 Sent</option>
-                      <option value="Email 3">📧 Email 3 Sent</option>
-                      <option value="Closed">🔒 Closed</option>
-                      <option value="Sequence Closed">✅ Sequence Closed</option>
+                      <option value="Not Sent" className="text-slate-700 dark:text-slate-200">📧 Not Sent</option>
+                      <option value="Email 1" className="text-emerald-700 dark:text-emerald-300">📧 Email 1 Sent</option>
+                      <option value="Email 2" className="text-blue-700 dark:text-blue-300">📧 Email 2 Sent</option>
+                      <option value="Email 3" className="text-purple-700 dark:text-purple-300">📧 Email 3 Sent</option>
+                      <option value="Closed" className="text-gray-700 dark:text-gray-300">🔒 Closed</option>
+                      <option value="Sequence Closed" className="text-slate-700 dark:text-slate-300">✅ Sequence Closed</option>
                     </select>
                   </td>
 
                   {/* Last Action Date */}
-                  <td className="px-3 py-3 min-w-[100px]">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span className="text-xs text-slate-600 dark:text-slate-400">{formatActionDate(lead.lastActionDate)}</span>
+                  <td className="px-4 py-3 min-w-[100px]">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-sm text-slate-600 dark:text-slate-400">{formatActionDate(lead.lastActionDate)}</span>
                     </div>
                   </td>
 
                   {/* Next Action Days */}
-                  <td className="px-3 py-3 min-w-[80px]">
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                  <td className="px-4 py-3 min-w-[80px]">
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                       {lead.nextActionDays != null ? `${lead.nextActionDays} days` : '—'}
                     </span>
                   </td>
 
                   {/* Next Action Date */}
-                  <td className="px-3 py-3 min-w-[100px]">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{formatActionDate(lead.nextActionDate)}</span>
+                  <td className="px-4 py-3 min-w-[110px]">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-sm font-medium text-amber-600 dark:text-amber-400">{formatActionDate(lead.nextActionDate)}</span>
                     </div>
                   </td>
 
                   {/* Response */}
-                  <td className="px-3 py-3 min-w-[110px]" onClick={e => e.stopPropagation()}>
+                  <td className="px-4 py-3 min-w-[120px]" onClick={e => e.stopPropagation()}>
                     <select
                       value={response}
                       onChange={e => {
@@ -706,26 +765,32 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                         const text = r !== 'none' ? `[Response: ${r}] ${clean}` : clean
                         updateLead({ id: lead.id, updates: { opsComments: text.trim() || null } })
                       }}
-                      className={cn('px-2 py-1 text-xs rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full', getResponseStyle(response))}
+                      className={cn(
+                        'px-2 py-1.5 text-sm rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full',
+                        'bg-white dark:bg-slate-800',
+                        'border-slate-300 dark:border-slate-600',
+                        'text-slate-700 dark:text-slate-200',
+                        getResponseStyle(response)
+                      )}
                     >
-                      <option value="none">⚪ None</option>
-                      <option value="positive">👍 Positive</option>
-                      <option value="negative">👎 Negative</option>
+                      <option value="none" className="text-slate-500 dark:text-slate-400">⚪ None</option>
+                      <option value="positive" className="text-emerald-700 dark:text-emerald-300">👍 Positive</option>
+                      <option value="negative" className="text-red-700 dark:text-red-300">👎 Negative</option>
                     </select>
                   </td>
 
                   {/* Ops Comments */}
-                  <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
+                  <td className="px-4 py-3 max-w-[260px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'opsComments', getCleanComments(lead.opsComments), 'Add comment')}
                   </td>
 
                   {/* Charlie's Feedback */}
-                  <td className="px-3 py-3 max-w-[250px] min-w-[180px]">
+                  <td className="px-4 py-3 max-w-[260px] min-w-[180px]">
                     {renderEditableCell(lead.id, 'charlieFeedback', lead.charlieFeedback, 'Add feedback')}
                   </td>
 
                   {/* Actions */}
-                  <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                     <button onClick={e => handleDeleteClick(lead, e)} className="p-1 text-red-400 hover:text-red-600 dark:text-red-500 dark:hover:text-red-400 transition-colors" title="Delete lead">
                       <Trash2 className="w-4 h-4" />
                     </button>

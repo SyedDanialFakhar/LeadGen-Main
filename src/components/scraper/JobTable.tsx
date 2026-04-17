@@ -40,6 +40,71 @@ interface JobTableProps {
 
 type AgeFilterType = 'all' | 'today' | 'week' | 'month' | 'older' | 'custom'
 
+// ─── Helper: Format days ago beautifully ──────────────────────────────────────
+const formatDaysAgo = (datePostedRaw: string): { text: string; color: string; days: number } => {
+  if (!datePostedRaw) return { text: 'Unknown', color: 'text-slate-400', days: 0 }
+  
+  const date = new Date(datePostedRaw)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  date.setHours(0, 0, 0, 0)
+  
+  const diffTime = today.getTime() - date.getTime()
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+  
+  let text = ''
+  let color = ''
+  
+  if (diffDays === 0) {
+    text = 'Today'
+    color = 'text-green-600 dark:text-green-400'
+  } else if (diffDays === 1) {
+    text = 'Yesterday'
+    color = 'text-emerald-600 dark:text-emerald-400'
+  } else if (diffDays < 7) {
+    text = `${diffDays} days ago`
+    color = 'text-emerald-600 dark:text-emerald-400'
+  } else if (diffDays < 14) {
+    text = `${diffDays} days ago`
+    color = 'text-yellow-600 dark:text-yellow-400'
+  } else if (diffDays < 21) {
+    text = '2 weeks ago'
+    color = 'text-orange-600 dark:text-orange-400'
+  } else if (diffDays < 30) {
+    text = '3 weeks ago'
+    color = 'text-orange-600 dark:text-orange-400'
+  } else if (diffDays < 60) {
+    text = '1 month ago'
+    color = 'text-red-600 dark:text-red-400'
+  } else if (diffDays < 90) {
+    text = '2 months ago'
+    color = 'text-red-600 dark:text-red-400'
+  } else if (diffDays < 120) {
+    text = '3 months ago'
+    color = 'text-red-600 dark:text-red-400'
+  } else {
+    text = `${Math.floor(diffDays / 30)} months ago`
+    color = 'text-red-600 dark:text-red-400'
+  }
+  
+  return { text, color, days: diffDays }
+}
+
+// ─── Helper: Format work type beautifully ────────────────────────────────────
+const formatWorkType = (workType: string | null | undefined): string => {
+  if (!workType) return '—'
+  const type = workType.toLowerCase()
+  if (type === 'fulltime' || type === 'full-time' || type === 'full time') return 'Full Time'
+  if (type === 'parttime' || type === 'part-time' || type === 'part time') return 'Part Time'
+  if (type === 'contract' || type === 'contract/temp') return 'Contract'
+  if (type === 'casual' || type === 'casual/vacation') return 'Casual'
+  if (type === 'temporary' || type === 'temp') return 'Temporary'
+  if (type === 'hybrid') return 'Hybrid'
+  if (type === 'remote') return 'Remote'
+  if (type === 'on-site' || type === 'onsite') return 'On-site'
+  return workType.charAt(0).toUpperCase() + workType.slice(1).toLowerCase()
+}
+
 export function JobTable({ 
   jobs, 
   currentPage, 
@@ -114,7 +179,6 @@ export function JobTable({
     })
   }, [jobs, ageFilter, customDays, customDateRange])
 
-  // Reset pagination when filter changes
   const handleFilterChange = (newFilter: AgeFilterType) => {
     setAgeFilter(newFilter)
     if (newFilter !== 'custom') {
@@ -130,11 +194,9 @@ export function JobTable({
 
   const hasActiveFilters = ageFilter !== 'all' || customDateRange.from || customDateRange.to
 
-  // Calculate filtered jobs pagination
   const filteredTotal = filteredJobs.length
   const currentFilteredJobs = filteredJobs.slice(0, itemsPerPage)
 
-  // Use filtered jobs if filters are active, otherwise use original jobs with pagination
   const displayJobs = hasActiveFilters ? currentFilteredJobs : jobs.slice(startIndex, startIndex + itemsPerPage)
   const displayTotal = hasActiveFilters ? filteredTotal : totalJobs
   const displayStartIndex = hasActiveFilters ? 1 : startIndex + 1
@@ -158,26 +220,6 @@ export function JobTable({
     if (url && url !== '#' && url !== '') {
       window.open(url, '_blank', 'noopener,noreferrer')
     }
-  }
-
-  const getDaysAgo = (datePostedRaw: string) => {
-    if (!datePostedRaw) return null
-    try {
-      const date = new Date(datePostedRaw)
-      const today = new Date()
-      const diffTime = today.getTime() - date.getTime()
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-      return diffDays
-    } catch (e) {
-      return null
-    }
-  }
-
-  const getAgeColor = (daysAgo: number) => {
-    if (daysAgo === 0) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-    if (daysAgo <= 7) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-    if (daysAgo <= 30) return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
-    return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
   }
 
   return (
@@ -220,7 +262,6 @@ export function JobTable({
       {showAgeFilter && (
         <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Quick filter buttons */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Quick Filters</label>
               <div className="flex flex-wrap gap-2">
@@ -282,7 +323,6 @@ export function JobTable({
               </div>
             </div>
 
-            {/* Custom days old filter */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Custom Days Old</label>
               <div className="flex items-center gap-2">
@@ -305,7 +345,6 @@ export function JobTable({
               </div>
             </div>
 
-            {/* Date range picker */}
             <div className="space-y-2 col-span-1 md:col-span-2">
               <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Date Range</label>
               <div className="flex flex-wrap gap-3">
@@ -335,7 +374,6 @@ export function JobTable({
             </div>
           </div>
 
-          {/* Active filters summary */}
           {hasActiveFilters && (
             <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
               <div className="flex flex-wrap gap-2">
@@ -408,7 +446,7 @@ export function JobTable({
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Company</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Job Title</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Posted</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Days Ago</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Age</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Location</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Salary</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">Work Type</th>
@@ -420,7 +458,9 @@ export function JobTable({
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
             {displayJobs.map((job, idx) => {
-              const daysAgo = getDaysAgo(job.datePostedRaw)
+              const daysAgoInfo = formatDaysAgo(job.datePostedRaw)
+              const workTypeFormatted = formatWorkType(job.workType)
+              
               return (
                 <tr key={job.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                   {onSelectJob && (
@@ -431,7 +471,7 @@ export function JobTable({
                         onChange={() => onSelectJob(job.id)}
                         className="rounded border-slate-300"
                       />
-                     </td>
+                    </td>
                   )}
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
@@ -457,7 +497,7 @@ export function JobTable({
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1">
                         <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
-                        <span className="text-slate-700 dark:text-slate-300 line-clamp-2">
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">
                           {job.jobTitle}
                         </span>
                       </div>
@@ -475,17 +515,12 @@ export function JobTable({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {daysAgo !== null && (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                          getAgeColor(daysAgo)
-                        )}>
-                          {daysAgo === 0 ? 'Today' : `${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`}
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", daysAgoInfo.color)}>
+                        {daysAgoInfo.text}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col">
@@ -511,8 +546,8 @@ export function JobTable({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs text-slate-600 dark:text-slate-400">
-                      {job.workType || job.workArrangement || '—'}
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                      {workTypeFormatted}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -614,7 +649,7 @@ export function JobTable({
         </table>
       </div>
 
-      {/* Pagination - only show if no active filters or if filtered jobs exceed page size */}
+      {/* Pagination */}
       {totalPages > 1 && !hasActiveFilters && (
         <div className="flex items-center justify-between pt-4">
           <Button
@@ -641,7 +676,6 @@ export function JobTable({
         </div>
       )}
 
-      {/* Show message when filters are active and no results */}
       {hasActiveFilters && displayJobs.length === 0 && (
         <div className="text-center py-8">
           <p className="text-slate-500 dark:text-slate-400">No jobs match your filter criteria</p>
