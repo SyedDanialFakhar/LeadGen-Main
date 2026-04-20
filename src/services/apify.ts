@@ -1,18 +1,17 @@
 // src/services/apify.ts
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * ENHANCED APIFY SERVICE - MAXIMUM QUALITY SALES LEADS
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * KEY IMPROVEMENTS:
- * 1. ✅ Correct Sales classification code: 1201 (not 6251)
- * 2. ✅ MAXIMUM Apify input parameters for best quality
- * 3. ✅ Filter at Seek level = 20 SALES jobs, not mixed
- * 4. ✅ Proper sub-classification flags
- * 5. ✅ Work type filters
- * 6. ✅ Sort by relevance for quality matches
- * 
- * RESULT: Get 20 high-quality SALES jobs → Filter agencies → 15-18 valid leads
+ * APIFY SERVICE
+ * ─────────────────────────────────────────
+ * Fix 1: Skip pages now uses Apify's native `offset` parameter instead of
+ *        appending `page=N` to the searchUrl, which Apify's actor ignored.
+ *        Apify actor supports `offset` directly as an input field.
+ *        offset = skipPages * resultsPerPage (default page size = 20)
+ *
+ * Fix 2: Sales classification still correctly applied via searchUrl
+ *        classification=1201 param.
+ *
+ * Fix 3: sortBy is passed as a proper actor input field (not only in URL)
+ *        to ensure Apify respects it.
  */
 
 import type { RawSeekJob, ScrapeConfig } from '@/types'
@@ -21,91 +20,57 @@ import { getApifyToken } from './settingsService'
 const APIFY_BASE = '/api/apify/v2'
 const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SEEK CLASSIFICATION CODES (from Seek URL analysis)
-// ═══════════════════════════════════════════════════════════════════════════
-const SEEK_SALES_CLASSIFICATION_ID = '1201' // ⭐ CORRECT CODE for Sales
-const SEEK_ALL_CLASSIFICATIONS_ID = '' // Empty = all classifications
+const SEEK_SALES_CLASSIFICATION_ID = '1201'
 
 /**
- * Build enhanced Seek URL with classification filter
+ * Build the Seek search URL — NO page param here (handled via offset input)
  */
-function buildEnhancedSeekSearchUrl(config: ScrapeConfig): string {
+function buildSeekSearchUrl(config: ScrapeConfig): string {
   const params = new URLSearchParams()
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // KEYWORDS (Job Title)
-  // ═══════════════════════════════════════════════════════════════════════
+
   if (config.roleQuery) {
     params.append('keywords', config.roleQuery)
   }
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // LOCATION
-  // ═══════════════════════════════════════════════════════════════════════
+
   if (config.city && config.city !== 'Australia') {
     params.append('where', config.city)
   }
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // ⭐ CLASSIFICATION FILTER - SALES ONLY (ID: 1201)
-  // ═══════════════════════════════════════════════════════════════════════
+
+  // Sales classification filter
   if (config.salesOnly !== false) {
     params.append('classification', SEEK_SALES_CLASSIFICATION_ID)
-    console.log(`✅ Sales classification filter (${SEEK_SALES_CLASSIFICATION_ID}) applied at Seek URL level`)
   }
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // SORT MODE
-  // ═══════════════════════════════════════════════════════════════════════
-  // KeywordRelevance = best matching jobs first (quality over recency)
-  // ListedDate = newest first
+
+  // Sort mode in URL
   if (config.minAgeDays && config.minAgeDays > 0) {
-    params.append('sortmode', 'ListedDate') // For older jobs, use date
+    params.append('sortmode', 'ListedDate')
   } else {
-    params.append('sortmode', 'KeywordRelevance') // For quality, use relevance
+    params.append('sortmode', 'ListedDate') // Always use ListedDate so page offset works correctly
   }
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // DATE RANGE FILTER
-  // ═══════════════════════════════════════════════════════════════════════
+
+  // Date range filter
   const minAgeDays = config.minAgeDays || 0
   if (minAgeDays > 0) {
-    let dateRange = 31 // Default: last month
-    
+    let dateRange = 31
     if (minAgeDays <= 1) dateRange = 1
     else if (minAgeDays <= 3) dateRange = 3
     else if (minAgeDays <= 7) dateRange = 7
     else if (minAgeDays <= 14) dateRange = 14
     else if (minAgeDays <= 30) dateRange = 31
-    else dateRange = 365 // Max: last year
-    
+    else dateRange = 365
+
     params.append('daterange', String(dateRange))
     console.log(`📅 Date filter: last ${dateRange} days`)
   }
-  
-  // ═══════════════════════════════════════════════════════════════════════
-  // PAGINATION (Skip pages for older jobs)
-  // ═══════════════════════════════════════════════════════════════════════
-  const skipPages = config.offset || 0
-  if (skipPages > 0) {
-    const startPage = skipPages + 1 // Seek uses 1-based page numbers
-    params.append('page', String(startPage))
-    console.log(`⏩ Starting from page ${startPage} (skipping first ${skipPages * 20} jobs)`)
-  }
-  
+
+  // ⚠️ DO NOT add page= here — use offset input param instead
   const finalUrl = `https://www.seek.com.au/jobs?${params.toString()}`
-  console.log(`🔗 Enhanced Seek URL: ${finalUrl}`)
-  console.log(`📊 Expected: ${config.maxResults || 20} SALES jobs matching "${config.roleQuery}"`)
-  
+  console.log(`🔗 Seek URL: ${finalUrl}`)
   return finalUrl
 }
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * RUN SEEK SCRAPER WITH MAXIMUM QUALITY FILTERS
- * ═══════════════════════════════════════════════════════════════════════════
- * Uses ALL available Apify input parameters for best results
+ * Run Seek scraper with correct offset-based pagination
  */
 export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
   const token = await getApifyToken()
@@ -113,22 +78,27 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     throw new Error('Apify token not configured. Please add it in Settings.')
   }
 
-  const searchUrl = buildEnhancedSeekSearchUrl(config)
+  const searchUrl = buildSeekSearchUrl(config)
+  const maxResults = config.maxResults || 20
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // MAXIMUM QUALITY INPUT CONFIGURATION
-  // ═══════════════════════════════════════════════════════════════════════
-  const input = {
-    // ⭐ SEARCH URL with classification filter
+  // ⭐ FIX: Calculate offset from skipPages
+  // Seek shows ~20 jobs per page, so skip 5 pages = offset 100
+  const skipPages = config.offset || 0
+  const offsetCount = skipPages * 20 // 20 jobs per Seek page
+
+  const input: Record<string, unknown> = {
+    // Primary search URL (with classification filter)
     searchUrl: searchUrl,
-    
-    // ⭐ MAX RESULTS
-    maxResults: config.maxResults || 20,
-    
-    // ⭐ SALES SUB-CLASSIFICATION FLAGS
-    // These are EXPLICIT flags in addition to URL classification
-    // Using ALL Sales sub-classifications for maximum coverage
-    'sales': true, // Main Sales classification
+
+    // Max results to fetch
+    maxResults: maxResults,
+
+    // ⭐ FIX: Use native offset param — this is how you skip pages in Apify actor
+    // offset tells the actor to start from result N instead of result 0
+    ...(offsetCount > 0 ? { offset: offsetCount } : {}),
+
+    // Sales sub-classification flags
+    'sales': true,
     'sales-account-relationship-management': true,
     'sales-management': true,
     'new-business-development': true,
@@ -136,46 +106,27 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     'sales-coordinators': true,
     'sales-analysis-reporting': true,
     'sales-other': true,
-    
-    // ⭐ WORK TYPES (exclude casual for B2B focus)
+
+    // Work types
     workTypes: ['fulltime', 'parttime', 'contract'],
-    
-    // ⭐ WORK ARRANGEMENTS (all types - let post-filter decide)
-    // workArrangements: ['on-site', 'hybrid', 'remote'],
-    
-    // ⭐ SORT ORDER (already in URL, but explicit for clarity)
-    sortBy: config.minAgeDays && config.minAgeDays > 0 
-      ? 'ListedDate'  // Older jobs: sort by date
-      : 'KeywordRelevance', // Quality: sort by relevance
-    
-    // ⭐ DATE RANGE (already in URL, but can be explicit)
-    dateRange: config.minAgeDays || undefined,
-    
-    // ⭐ CONTACT FILTERS (optional - currently disabled)
-    // Enable these if you ONLY want jobs with contact info
-    // requireEmail: false,  // Set true to ONLY get jobs with emails
-    // requirePhone: false,  // Set true to ONLY get jobs with phones
-    // requireEmailPhone: false,  // Set true to ONLY get jobs with BOTH
-    
-    // ⭐ PROXY CONFIGURATION (for reliability)
+
+    // Sort — use ListedDate when skipping pages (most predictable)
+    sortBy: 'ListedDate',
+
+    // Proxy
     proxyConfiguration: {
       useApifyProxy: true
     }
   }
 
-  console.log('═══════════════════════════════════════════════════════════')
-  console.log('📦 Enhanced Apify Input Configuration:')
-  console.log(`   • Search URL: ${searchUrl}`)
-  console.log(`   • Max Results: ${input.maxResults}`)
-  console.log(`   • Classification: Sales (ID: 1201) - filtered at Seek level`)
-  console.log(`   • Sub-classifications: ALL Sales types enabled`)
-  console.log(`   • Work Types: ${input.workTypes.join(', ')}`)
-  console.log(`   • Sort By: ${input.sortBy}`)
-  console.log('═══════════════════════════════════════════════════════════')
+  console.log('═══════════════════════════════════════')
+  console.log('📦 Apify Input:')
+  console.log(`   • URL: ${searchUrl}`)
+  console.log(`   • maxResults: ${maxResults}`)
+  console.log(`   • offset: ${offsetCount} (skip ${skipPages} pages × 20 jobs)`)
+  console.log(`   • sortBy: ListedDate`)
+  console.log('═══════════════════════════════════════')
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // START ACTOR RUN
-  // ═══════════════════════════════════════════════════════════════════════
   try {
     const response = await fetch(
       `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,
@@ -192,28 +143,21 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('❌ Apify API error:', errorText)
-
       let errorMessage = `Apify run failed: ${response.status}`
       try {
         const errorJson = JSON.parse(errorText)
         if (errorJson.error?.message) {
           errorMessage = `Apify error: ${errorJson.error.message}`
         }
-      } catch {
-        // Use default error message
-      }
-
+      } catch { /* use default */ }
       throw new Error(errorMessage)
     }
 
     const result = await response.json()
     const runId = result.data.id
-    
-    console.log(`✅ Apify run started successfully: ${runId}`)
-    console.log(`⏳ Waiting for results...`)
-    
+    console.log(`✅ Apify run started: ${runId}`)
     return runId
-    
+
   } catch (error) {
     console.error('❌ Failed to start Apify run:', error)
     throw error
@@ -221,9 +165,7 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
 }
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * POLL RUN STATUS
- * ═══════════════════════════════════════════════════════════════════════════
+ * Poll run status
  */
 export async function pollRunStatus(runId: string): Promise<'running' | 'succeeded' | 'failed'> {
   const token = await getApifyToken()
@@ -247,15 +189,12 @@ export async function pollRunStatus(runId: string): Promise<'running' | 'succeed
 }
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * FETCH RUN RESULTS
- * ═══════════════════════════════════════════════════════════════════════════
+ * Fetch run results from dataset
  */
 export async function fetchRunResults(runId: string, limit?: number): Promise<RawSeekJob[]> {
   const token = await getApifyToken()
   if (!token) throw new Error('Apify token not configured')
 
-  // Get run details to find dataset ID
   const runResponse = await fetch(
     `${APIFY_BASE}/actor-runs/${runId}`,
     { headers: { 'Authorization': `Bearer ${token}` } }
@@ -272,7 +211,6 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
     throw new Error('No dataset found for this run')
   }
 
-  // Fetch results from dataset
   const actualLimit = limit || 50
   const response = await fetch(
     `${APIFY_BASE}/datasets/${datasetId}/items?limit=${actualLimit}`,
@@ -284,31 +222,26 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
   }
 
   const data = await response.json()
+  console.log(`✅ Fetched ${data.length} jobs from Apify`)
 
   if (data.length > actualLimit) {
-    console.log(`⚠️ Limiting results to ${actualLimit}`)
     return data.slice(0, actualLimit)
   }
 
-  console.log(`✅ Fetched ${data.length} SALES jobs from Apify`)
-  console.log(`📊 All jobs are Sales classification (filtered at Seek level)`)
-  
   return data
 }
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * WAIT FOR RUN WITH TIMEOUT
- * ═══════════════════════════════════════════════════════════════════════════
+ * Wait for run to complete with timeout
  */
 export async function waitForRun(
   runId: string,
   onProgress?: (status: string) => void,
-  timeoutMs = 180000 // 3 minutes
+  timeoutMs = 180000
 ): Promise<'succeeded' | 'failed'> {
   const start = Date.now()
   let pollCount = 0
-  const pollInterval = 3000 // Poll every 3 seconds
+  const pollInterval = 3000
 
   while (Date.now() - start < timeoutMs) {
     pollCount++
@@ -316,16 +249,16 @@ export async function waitForRun(
     onProgress?.(status)
 
     const elapsed = Math.floor((Date.now() - start) / 1000)
-    
-    if (pollCount % 5 === 0) { // Log every 15 seconds
+
+    if (pollCount % 5 === 0) {
       console.log(`🔄 Poll ${pollCount}: ${status} (${elapsed}s elapsed)`)
     }
 
     if (status === 'succeeded') {
-      console.log(`✅ Run completed successfully in ${elapsed}s`)
+      console.log(`✅ Run completed in ${elapsed}s`)
       return 'succeeded'
     }
-    
+
     if (status === 'failed') {
       console.log(`❌ Run failed after ${elapsed}s`)
       return 'failed'

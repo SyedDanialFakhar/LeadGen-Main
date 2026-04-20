@@ -10,7 +10,7 @@ interface ScraperLogProps {
 
 export function ScraperLog({ logs, isRunning }: ScraperLogProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
-  const [isExpanded, setIsExpanded] = useState(false) // Changed to false (initially collapsed)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   useEffect(() => {
     if (isExpanded) {
@@ -29,20 +29,20 @@ export function ScraperLog({ logs, isRunning }: ScraperLogProps) {
   }
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="select-none py-3">
+    <Card className="overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+      <CardHeader className="py-3 select-none bg-slate-900 dark:bg-slate-950 border-b border-slate-700">
         <div
           className="flex items-center justify-between cursor-pointer"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-slate-800 dark:bg-slate-700 flex items-center justify-center">
-              <Terminal className="w-4 h-4 text-slate-300" />
+            <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center">
+              <Terminal className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-slate-900 dark:text-white">Scraper Log</h3>
+              <h3 className="font-semibold text-white text-sm">Scraper Log</h3>
               {logs.length > 0 && (
-                <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-full text-xs tabular-nums">
+                <span className="px-1.5 py-0.5 bg-slate-700 text-slate-400 rounded-full text-xs tabular-nums">
                   {logs.length}
                 </span>
               )}
@@ -55,16 +55,13 @@ export function ScraperLog({ logs, isRunning }: ScraperLogProps) {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                 </span>
-                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  Live
-                </span>
+                <span className="text-xs font-semibold text-emerald-400">Live</span>
               </div>
             )}
-            {isExpanded ? (
-              <ChevronUp className="w-4 h-4 text-slate-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            )}
+            {isExpanded
+              ? <ChevronUp className="w-4 h-4 text-slate-400" />
+              : <ChevronDown className="w-4 h-4 text-slate-400" />
+            }
           </div>
         </div>
       </CardHeader>

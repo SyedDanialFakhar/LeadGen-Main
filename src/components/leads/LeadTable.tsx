@@ -16,7 +16,7 @@ import type { Lead, LeadStatus, MatchAssessment } from '@/types'
 import { formatDate } from '@/utils/dateUtils'
 import { useLeads } from '@/hooks/useLeads'
 import { enrichMultipleCompanies } from '@/services/companyEnrichment'
-import { EnrichmentConfirmModal, type EnrichmentResult, type EnrichmentDecision } from './EnrichmentConfirmModal'
+import { EnrichmentConfirmModal, type EnrichmentResult, type EnrichmentDecision } from './Enrichmentconfirmmodal'
 import { cn } from '@/utils/cn'
 
 interface LeadTableProps {

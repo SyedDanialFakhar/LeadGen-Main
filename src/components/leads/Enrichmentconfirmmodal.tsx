@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ExternalLink, Globe, Linkedin, CheckCircle2, XCircle, RefreshCw, ChevronRight, AlertCircle, Zap, Building2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import type { EnrichedCompanyData } from '@/services/companyEnrichment'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ export interface EnrichmentResult {
   website: string | null
   linkedinUrl: string | null
   confidence: number
-  source: 'clearbit' | 'apify' | 'google' | 'duckduckgo' | 'none'  // ADDED 'duckduckgo'
+  source: EnrichedCompanyData['source']
   // existing values so user can compare
   existingWebsite: string | null
   existingLinkedin: string | null
@@ -34,21 +35,21 @@ interface EnrichmentConfirmModalProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const sourceLabel: Record<string, string> = {
+const sourceLabel: Record<EnrichedCompanyData['source'], string> = {
   knowledgegraph: 'Google Knowledge Graph',
   clearbit: 'Clearbit',
-  apify: 'Apify',
   google: 'Google Search',
-  duckduckgo: 'DuckDuckGo',  // ADDED
+  duckduckgo: 'DuckDuckGo',
+  hunter: 'Hunter.io',
   none: 'Not found',
 }
 
-const sourceColour: Record<string, string> = {
+const sourceColour: Record<EnrichedCompanyData['source'], string> = {
   knowledgegraph: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   clearbit: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  apify: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   google: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  duckduckgo: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',  // ADDED
+  duckduckgo: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  hunter: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
   none: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
 }
 
