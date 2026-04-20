@@ -1,26 +1,9 @@
 // src/components/leads/LeadDetailModal.tsx
 import { useState, useEffect } from 'react'
 import {
-  ExternalLink,
-  Mail,
-  Phone,
-  Linkedin,
-  Building2,
-  MapPin,
-  Calendar,
-  AlertTriangle,
-  Users,
-  Briefcase,
-  Globe,
-  Star,
-  ThumbsUp,
-  ThumbsDown,
-  Minus,
-  FileText,
-  MessageSquare,
-  Send,
-  CheckCircle,
-  XCircle,
+  ExternalLink, Mail, Phone, Linkedin, Building2, MapPin,
+  Calendar, AlertTriangle, Users, Globe, Star,
+  ThumbsUp, ThumbsDown, Minus, CheckCircle,
 } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
@@ -40,15 +23,15 @@ interface LeadDetailModalProps {
 
 type ResponseStatus = 'positive' | 'negative' | 'none'
 
-// Email status options
 const EMAIL_STATUS_OPTIONS = [
   { value: 'Not Sent', label: '📧 Not Sent' },
   { value: 'Email 1', label: '📧 Email 1 Sent' },
   { value: 'Email 2', label: '📧 Email 2 Sent' },
   { value: 'Email 3', label: '📧 Email 3 Sent' },
+  { value: 'Closed', label: '🔒 Closed' },
+  { value: 'Sequence Closed', label: '✅ Sequence Closed' },
 ]
 
-// Match assessment options
 const MATCH_ASSESSMENT_OPTIONS = [
   { value: '', label: '⭐ Not Set' },
   { value: 'High', label: '🔥 High Match' },
@@ -56,18 +39,75 @@ const MATCH_ASSESSMENT_OPTIONS = [
   { value: 'Low', label: '⚠️ Low Match' },
 ]
 
-// Response options
-const RESPONSE_OPTIONS = [
-  { value: 'none', label: '⚪ None' },
-  { value: 'positive', label: '👍 Positive' },
-  { value: 'negative', label: '👎 Negative' },
-]
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
+      {children}
+    </p>
+  )
+}
+
+function InfoRow({ icon: Icon, label, value, href }: {
+  icon: React.ElementType
+  label: string
+  value: string | null | undefined
+  href?: string
+}) {
+  if (!value) return null
+  return (
+    <div className="flex items-start gap-2.5 text-sm">
+      <Icon className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        <span className="text-xs text-slate-400 block">{label}</span>
+        {href ? (
+          <a href={href} target="_blank" rel="noopener noreferrer"
+            className="text-blue-600 dark:text-blue-400 hover:underline truncate block">
+            {value}
+          </a>
+        ) : (
+          <span className="text-slate-700 dark:text-slate-300">{value}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ResponseButton({ value, current, onChange }: {
+  value: ResponseStatus
+  current: ResponseStatus
+  onChange: (v: ResponseStatus) => void
+}) {
+  const isActive = value === current
+  const config = {
+    positive: { label: 'Positive', icon: ThumbsUp, active: 'bg-emerald-500 text-white shadow-md', hover: 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' },
+    negative: { label: 'Negative', icon: ThumbsDown, active: 'bg-red-500 text-white shadow-md', hover: 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400' },
+    none: { label: 'No Response', icon: Minus, active: 'bg-slate-500 text-white shadow-md', hover: 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500' },
+  }[value]
+
+  const Icon = config.icon
+  return (
+    <button
+      onClick={() => onChange(value)}
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center',
+        'bg-slate-100 dark:bg-slate-700/60 border border-transparent',
+        isActive ? config.active : cn('text-slate-500 dark:text-slate-400', config.hover)
+      )}
+    >
+      <Icon className="w-4 h-4" />
+      {config.label}
+    </button>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
   const { updateLead, isUpdating } = useLeads()
   const { showToast } = useToast()
-  
-  // Local state for editable fields
+
   const [opsComments, setOpsComments] = useState('')
   const [charlieFeedback, setCharlieFeedback] = useState('')
   const [status, setStatus] = useState<LeadStatus>('Not Sent')
@@ -79,30 +119,24 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
   const [contactPhone, setContactPhone] = useState('')
   const [contactLinkedinUrl, setContactLinkedinUrl] = useState('')
 
-  // Helper to extract response from comments
   const getResponseFromComments = (comments: string | null): ResponseStatus => {
     if (!comments) return 'none'
     const match = comments.match(/\[Response:\s*(positive|negative|none)\]/i)
-    if (match) {
-      return match[1].toLowerCase() as ResponseStatus
-    }
-    return 'none'
+    return match ? (match[1].toLowerCase() as ResponseStatus) : 'none'
   }
 
-  // Helper to get clean comments without response tag
   const getCleanComments = (comments: string | null): string => {
     if (!comments) return ''
-    return comments.replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '')
+    return comments.replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '').trim()
   }
 
-  // Update local state when lead changes
   useEffect(() => {
     if (lead) {
       setOpsComments(getCleanComments(lead.opsComments))
       setCharlieFeedback(lead.charlieFeedback || '')
       setStatus(lead.status)
       setMatchAssessment(lead.matchAssessment)
-      setResponse(getResponseFromComments(lead.opsComments))
+      setResponse(lead.response as ResponseStatus ?? getResponseFromComments(lead.opsComments))
       setContactName(lead.contactName || '')
       setContactJobTitle(lead.contactJobTitle || '')
       setContactEmail(lead.contactEmail || '')
@@ -114,12 +148,9 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
   if (!lead) return null
 
   const handleSave = () => {
-    // Build the response tag for comments
-    const cleanCurrentComments = getCleanComments(lead.opsComments)
-    const newComments = response !== 'none' 
+    const newComments = response !== 'none'
       ? `[Response: ${response}] ${opsComments}`
       : opsComments
-
     updateLead({
       id: lead.id,
       updates: {
@@ -127,6 +158,7 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
         charlieFeedback: charlieFeedback || null,
         status,
         matchAssessment: matchAssessment || null,
+        response: response === 'none' ? null : response,
         contactName: contactName || null,
         contactJobTitle: contactJobTitle || null,
         contactEmail: contactEmail || null,
@@ -134,364 +166,238 @@ export function LeadDetailModal({ lead, onClose }: LeadDetailModalProps) {
         contactLinkedinUrl: contactLinkedinUrl || null,
       },
     })
-    showToast('Lead updated successfully', 'success')
+    showToast('Lead updated', 'success')
     onClose()
-  }
-
-  // Get response badge style
-  const getResponseBadgeStyle = (resp: ResponseStatus) => {
-    switch (resp) {
-      case 'positive': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-      case 'negative': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-      default: return 'bg-slate-100 text-slate-500 dark:bg-slate-700/50 dark:text-slate-400'
-    }
-  }
-
-  const getResponseIcon = (resp: ResponseStatus) => {
-    switch (resp) {
-      case 'positive': return <ThumbsUp className="w-3.5 h-3.5" />
-      case 'negative': return <ThumbsDown className="w-3.5 h-3.5" />
-      default: return <Minus className="w-3.5 h-3.5" />
-    }
   }
 
   return (
     <Modal
       isOpen={!!lead}
       onClose={onClose}
-      title={`${lead.companyName} - ${lead.jobTitle}`}
+      title={`${lead.companyName} — ${lead.jobTitle}`}
       size="xl"
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} isLoading={isUpdating}>
-            Save Changes
-          </Button>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} isLoading={isUpdating}>Save Changes</Button>
         </div>
       }
     >
-      <div className="flex flex-col gap-5 max-h-[70vh] overflow-y-auto px-1">
-        {/* Warnings */}
+      <div className="max-h-[72vh] overflow-y-auto space-y-5 pr-1">
+
+        {/* ── Warnings ── */}
         {(lead.isRecruitmentAgency || lead.noAgencyDisclaimer) && (
-          <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg">
-            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-            <div className="text-sm text-red-700 dark:text-red-300">
-              {lead.isRecruitmentAgency && <p>⚠️ Flagged as recruitment agency</p>}
-              {lead.noAgencyDisclaimer && <p>⚠️ Ad contains "no agency" disclaimer</p>}
+          <div className="flex items-start gap-2.5 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              {lead.isRecruitmentAgency && <p>Flagged as recruitment agency</p>}
+              {lead.noAgencyDisclaimer && <p>Ad contains "no agency" disclaimer</p>}
             </div>
           </div>
         )}
 
-        {/* Header Badges */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* ── Badges row ── */}
+        <div className="flex flex-wrap gap-2">
           <PlatformBadge platform={lead.platform} />
-          <span className={cn(
-            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-            getResponseBadgeStyle(response)
-          )}>
-            {getResponseIcon(response)}
-            {response === 'positive' ? 'Positive' : response === 'negative' ? 'Negative' : 'No Response'}
-          </span>
+          <EnrichmentBadge status={lead.enrichmentStatus} />
           {lead.followUpRequired && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
               Follow-up Required
             </span>
           )}
           {lead.emailSent && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-              Email Sent
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              <CheckCircle className="w-3 h-3" /> Email Sent
             </span>
           )}
         </div>
 
-        {/* Two Column Layout for Basic Info */}
-        <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Company
-            </p>
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-slate-400" />
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {lead.companyName}
-              </span>
-              {lead.companyEmployeeCount && (
-                <span className="text-xs text-slate-400">
-                  ({lead.companyEmployeeCount} emp)
-                </span>
-              )}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Job Title
-            </p>
-            <div className="flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-slate-400" />
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {lead.jobTitle}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Location
-            </p>
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-700 dark:text-slate-300">
-                {lead.city}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Date Posted
-            </p>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-700 dark:text-slate-300">
-                {formatDate(lead.datePosted)}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Applicants
-            </p>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-700 dark:text-slate-300">
-                {lead.applicantCount ? lead.applicantCount : '—'}
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Company Website
-            </p>
-            {lead.companyWebsite ? (
-              <a
-                href={lead.companyWebsite}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline truncate"
-              >
-                <Globe className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">
-                  {lead.companyWebsite.replace('https://', '').replace('http://', '').replace('www.', '')}
-                </span>
-              </a>
-            ) : (
-              <p className="text-sm text-slate-400">—</p>
-            )}
-          </div>
-        </div>
+        {/* ── Two column layout ── */}
+        <div className="grid grid-cols-2 gap-5">
 
-        {/* Contact Information Section */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4">
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
-            Contact Information
-          </p>
-          <div className="grid grid-cols-2 gap-4">
+          {/* LEFT: Company + Job Info */}
+          <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
-                Name
-              </label>
-              <input
-                type="text"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="Contact name"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <SectionLabel>Company</SectionLabel>
+              <div className="space-y-2">
+                <InfoRow icon={Building2} label="Company" value={lead.companyName} />
+                <InfoRow icon={MapPin} label="Location" value={lead.location ?? lead.city} />
+                <InfoRow icon={Users} label="Size" value={lead.companyEmployeeCount} />
+                <InfoRow icon={Globe} label="Website" value={lead.companyWebsite} href={lead.companyWebsite ?? undefined} />
+                <InfoRow icon={Linkedin} label="LinkedIn" value={lead.companyLinkedinUrl ? 'View LinkedIn Page' : null} href={lead.companyLinkedinUrl ?? undefined} />
+              </div>
             </div>
+
             <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
-                Role Title
-              </label>
-              <input
-                type="text"
-                value={contactJobTitle}
-                onChange={(e) => setContactJobTitle(e.target.value)}
-                placeholder="Role title"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <SectionLabel>Job Details</SectionLabel>
+              <div className="space-y-2">
+                <InfoRow icon={Calendar} label="Posted" value={formatDate(lead.datePosted)} />
+                {lead.salary && <InfoRow icon={Star} label="Salary" value={lead.salary} />}
+                {lead.workType && <InfoRow icon={Building2} label="Work Type" value={lead.workType} />}
+                <div className="mt-1">
+                  <a
+                    href={lead.jobAdUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View Job Ad
+                  </a>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="email@example.com"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
-                Phone
-              </label>
-              <input
-                type="tel"
-                value={contactPhone}
-                onChange={(e) => setContactPhone(e.target.value)}
-                placeholder="Phone number"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">
-                LinkedIn URL
-              </label>
-              <input
-                type="url"
-                value={contactLinkedinUrl}
-                onChange={(e) => setContactLinkedinUrl(e.target.value)}
-                placeholder="https://linkedin.com/in/..."
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+          </div>
+
+          {/* RIGHT: Contact Info (editable) */}
+          <div>
+            <SectionLabel>Contact Details</SectionLabel>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Name</label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={e => setContactName(e.target.value)}
+                  placeholder="Contact name"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Role Title</label>
+                <input
+                  type="text"
+                  value={contactJobTitle}
+                  onChange={e => setContactJobTitle(e.target.value)}
+                  placeholder="Role title"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={e => setContactEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={contactPhone}
+                  onChange={e => setContactPhone(e.target.value)}
+                  placeholder="04xx xxx xxx"
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">LinkedIn URL</label>
+                <input
+                  type="url"
+                  value={contactLinkedinUrl}
+                  onChange={e => setContactLinkedinUrl(e.target.value)}
+                  placeholder="https://linkedin.com/in/..."
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Job Ad Link */}
-        <div>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-            Job Ad URL
-          </p>
-          <a
-            href={lead.jobAdUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline break-all"
-          >
-            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-            {lead.jobAdUrl}
-          </a>
-        </div>
+        {/* ── Divider ── */}
+        <div className="border-t border-slate-100 dark:border-slate-700" />
 
-        {/* Status and Assessment Row */}
+        {/* ── Status controls ── */}
         <div className="grid grid-cols-2 gap-4">
           <Select
             label="Email Status"
             value={status}
-            onChange={(e) => setStatus(e.target.value as LeadStatus)}
+            onChange={e => setStatus(e.target.value as LeadStatus)}
             options={EMAIL_STATUS_OPTIONS}
           />
           <Select
             label="Match Assessment"
             value={matchAssessment || ''}
-            onChange={(e) => setMatchAssessment(e.target.value as MatchAssessment || null)}
+            onChange={e => setMatchAssessment(e.target.value as MatchAssessment || null)}
             options={MATCH_ASSESSMENT_OPTIONS}
           />
         </div>
 
-        {/* Response Selection */}
+        {/* ── Response ── */}
         <div>
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-            Response
-          </label>
+          <SectionLabel>Response</SectionLabel>
           <div className="flex gap-2">
-            {RESPONSE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setResponse(opt.value as ResponseStatus)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                  response === opt.value
-                    ? opt.value === 'positive'
-                      ? "bg-green-500 text-white shadow-md"
-                      : opt.value === 'negative'
-                      ? "bg-red-500 text-white shadow-md"
-                      : "bg-slate-500 text-white shadow-md"
-                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
-                )}
-              >
-                {opt.value === 'positive' && <ThumbsUp className="w-4 h-4" />}
-                {opt.value === 'negative' && <ThumbsDown className="w-4 h-4" />}
-                {opt.value === 'none' && <Minus className="w-4 h-4" />}
-                {opt.label}
-              </button>
-            ))}
+            <ResponseButton value="positive" current={response} onChange={setResponse} />
+            <ResponseButton value="negative" current={response} onChange={setResponse} />
+            <ResponseButton value="none" current={response} onChange={setResponse} />
           </div>
         </div>
 
-        {/* OPS Comments */}
-        <div>
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-            OPS Comments
-          </label>
-          <textarea
-            value={opsComments}
-            onChange={(e) => setOpsComments(e.target.value)}
-            rows={3}
-            placeholder="Add your comments here..."
-            className={cn(
-              'w-full rounded-lg border text-sm px-3 py-2 resize-none',
-              'bg-white dark:bg-slate-800',
-              'text-slate-900 dark:text-slate-100',
-              'border-slate-300 dark:border-slate-600',
-              'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-              'focus:outline-none focus:ring-2 focus:ring-blue-500',
-              'dark:focus:ring-blue-400'
-            )}
-          />
+        {/* ── Notes ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <SectionLabel>OPS Comments</SectionLabel>
+            <textarea
+              value={opsComments}
+              onChange={e => setOpsComments(e.target.value)}
+              rows={3}
+              placeholder="Add your comments here..."
+              className="w-full rounded-lg border text-sm px-3 py-2 resize-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <SectionLabel>Charlie's Feedback</SectionLabel>
+            <textarea
+              value={charlieFeedback}
+              onChange={e => setCharlieFeedback(e.target.value)}
+              rows={3}
+              placeholder="Charlie's notes on this lead..."
+              className="w-full rounded-lg border text-sm px-3 py-2 resize-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
         </div>
 
-        {/* Charlie Feedback */}
-        <div>
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-            Charlie's Feedback
-          </label>
-          <textarea
-            value={charlieFeedback}
-            onChange={(e) => setCharlieFeedback(e.target.value)}
-            rows={3}
-            placeholder="Charlie's notes on this lead..."
-            className={cn(
-              'w-full rounded-lg border text-sm px-3 py-2 resize-none',
-              'bg-white dark:bg-slate-800',
-              'text-slate-900 dark:text-slate-100',
-              'border-slate-300 dark:border-slate-600',
-              'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-              'focus:outline-none focus:ring-2 focus:ring-blue-500',
-              'dark:focus:ring-blue-400'
-            )}
-          />
-        </div>
-
-        {/* Enrichment Info (if available) */}
-        {(lead.enrichmentStatus === 'enriched') && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4">
-            <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-2">
-              Enrichment Data
-            </p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
+        {/* ── Enrichment data (if available) ── */}
+        {lead.enrichmentStatus === 'enriched' && (lead.companyIndustry || lead.companySize || lead.companyRating) && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-4">
+            <SectionLabel>Enrichment Data</SectionLabel>
+            <div className="grid grid-cols-3 gap-3 text-sm">
               {lead.companyIndustry && (
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400">Industry:</span>
-                  <span className="ml-2 text-slate-700 dark:text-slate-300">{lead.companyIndustry}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 block">Industry</span>
+                  <span className="text-slate-700 dark:text-slate-300">{lead.companyIndustry}</span>
                 </div>
               )}
               {lead.companySize && (
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400">Company Size:</span>
-                  <span className="ml-2 text-slate-700 dark:text-slate-300">{lead.companySize}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 block">Size</span>
+                  <span className="text-slate-700 dark:text-slate-300">{lead.companySize}</span>
                 </div>
               )}
               {lead.companyRating && (
                 <div>
-                  <span className="text-slate-500 dark:text-slate-400">Rating:</span>
-                  <span className="ml-2 text-slate-700 dark:text-slate-300">⭐ {lead.companyRating}/5</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 block">Rating</span>
+                  <span className="text-slate-700 dark:text-slate-300">⭐ {lead.companyRating}/5</span>
                 </div>
               )}
             </div>
           </div>
+        )}
+
+        {/* ── Ad description (collapsible) ── */}
+        {lead.adDescription && (
+          <details className="group">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-400 uppercase tracking-widest select-none list-none flex items-center gap-1.5">
+              <span className="transition-transform group-open:rotate-90">▶</span>
+              Ad Description
+            </summary>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3">
+              {lead.adDescription}
+            </p>
+          </details>
         )}
       </div>
     </Modal>

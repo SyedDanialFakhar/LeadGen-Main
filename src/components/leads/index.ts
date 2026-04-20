@@ -1,3 +1,7 @@
 export { LeadFilters } from './LeadFilters'
 export { LeadDetailModal } from './LeadDetailModal'
 export { LeadTable } from './LeadTable'
+export { AddLeadModal } from './AddLeadModal'
+export { LeadStatsBar } from './LeadStatsBar'
+export { EnrichmentConfirmModal } from './Enrichmentconfirmmodal'
+export type { EnrichmentResult, EnrichmentDecision } from './Enrichmentconfirmmodal'

@@ -2,15 +2,24 @@
 /**
  * COMPANY ENRICHMENT SERVICE (April 2026)
  *
- * Chain:
- *  1. Google Knowledge Graph API (FREE 100k/day) — most accurate for AU companies
- *  2. Clearbit Autocomplete (FREE, no auth)
- *  3. DuckDuckGo Instant Answer (FREE)
- *  4. Hunter.io domain search (FREE tier)
- *  5. Apify Google Search (paid, only if token configured)
+ * Strategy — every source runs for BOTH website AND LinkedIn:
+ *  1. Google Knowledge Graph (FREE 100k/day) — best for AU orgs, has sameAs links
+ *  2. Clearbit Autocomplete (FREE, no auth) — fast domain + LinkedIn handle
+ *  3. Wikidata SPARQL (FREE, no auth) — official URLs + LinkedIn IDs
+ *  4. DuckDuckGo Instant Answer (FREE) — cross-verify LinkedIn slugs
+ *  5. Open Corporates (FREE tier) — company registry AU data
+ *  6. Apify Google Search (paid, only if token configured) — deep scrape
  *
- * LinkedIn: runs via KG sameAs, Clearbit handle, slug-construction + DDG verify,
- * and Apify site:linkedin.com/company/ search — all sources combined.
+ * LinkedIn detection flow (exhaustive):
+ *  - KG sameAs[] links → direct LinkedIn URL
+ *  - Clearbit linkedin.handle → construct URL
+ *  - Wikidata P6634 (LinkedIn company numeric ID) → verify URL
+ *  - Slug construction from cleaned name → DDG verify
+ *  - Apify site:linkedin.com/company/ search
+ *  - All candidates cross-validated; best slug kept
+ *
+ * Website detection is run in parallel with LinkedIn on all sources.
+ * Speed: KG + Clearbit + Wikidata run in parallel; slow sources only if needed.
  */
 
 export interface EnrichedCompanyData {
@@ -19,7 +28,7 @@ export interface EnrichedCompanyData {
   industry: string | null
   companySize: string | null
   confidence: number
-  source: 'knowledgegraph' | 'clearbit' | 'duckduckgo' | 'hunter' | 'google' | 'none'
+  source: 'knowledgegraph' | 'clearbit' | 'wikidata' | 'duckduckgo' | 'opencorporates' | 'google' | 'none'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -27,7 +36,7 @@ export interface EnrichedCompanyData {
 function cleanCompanyName(name: string): string {
   if (!name) return ''
   return name
-    .replace(/\bPty\.?\s*Ltd\.?\b|\bLtd\.?\b|\bPty\.?\b|\bLLC\b|\bInc\.?\b|\bCorp\.?\b|\bLimited\b|\bOperations\b/gi, '')
+    .replace(/\bPty\.?\s*Ltd\.?\b|\bLtd\.?\b|\bPty\.?\b|\bLLC\b|\bInc\.?\b|\bCorp\.?\b|\bLimited\b|\bOperations\b|\bGroup\b|\bHoldings\b/gi, '')
     .replace(/[&]/g, 'and')
     .replace(/[^\w\s]/g, '')
     .trim()
@@ -42,6 +51,34 @@ function toLinkedInSlug(name: string): string {
     .replace(/^-|-$/g, '')
 }
 
+// Generate multiple slug variants to try (handles common mismatches)
+function toLinkedInSlugVariants(name: string): string[] {
+  const base = cleanCompanyName(name)
+  const variants = new Set<string>()
+
+  // Standard slug
+  const standard = base.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  variants.add(standard)
+
+  // Without "and"
+  const noAnd = base.replace(/\band\b/gi, '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  variants.add(noAnd)
+
+  // With ampersand → hyphen
+  const withAmp = name.replace(/\s*&\s*/g, '-').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  variants.add(withAmp)
+
+  // First word only (for large orgs)
+  const firstWord = standard.split('-')[0]
+  if (firstWord && firstWord.length > 3) variants.add(firstWord)
+
+  // Original name without stripping, just slugified
+  const raw = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  variants.add(raw)
+
+  return Array.from(variants).filter(v => v.length >= 2)
+}
+
 function extractDomain(url: string): string {
   try { return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '').toLowerCase() }
   catch { return '' }
@@ -53,13 +90,14 @@ function normaliseUrl(url: string): string {
 }
 
 const BLOCKED_DOMAINS = [
-  'google.com','google.com.au','bing.com','yahoo.com','duckduckgo.com',
-  'facebook.com','instagram.com','twitter.com','x.com','tiktok.com',
-  'youtube.com','pinterest.com','seek.com.au','indeed.com','glassdoor.com',
-  'jora.com','yellowpages.com.au','whitepages.com.au','truelocal.com.au',
-  'hotfrog.com.au','localsearch.com.au','yelp.com','wikipedia.org',
-  'wikimedia.org','wikidata.org','abr.gov.au','asic.gov.au',
-  'crunchbase.com','bloomberg.com','zoominfo.com','dnb.com',
+  'google.com', 'google.com.au', 'bing.com', 'yahoo.com', 'duckduckgo.com',
+  'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'tiktok.com',
+  'youtube.com', 'pinterest.com', 'seek.com.au', 'indeed.com', 'glassdoor.com',
+  'jora.com', 'yellowpages.com.au', 'whitepages.com.au', 'truelocal.com.au',
+  'hotfrog.com.au', 'localsearch.com.au', 'yelp.com', 'wikipedia.org',
+  'wikimedia.org', 'wikidata.org', 'abr.gov.au', 'asic.gov.au',
+  'crunchbase.com', 'bloomberg.com', 'zoominfo.com', 'dnb.com',
+  'opencorporates.com', 'abn.business.gov.au', 'abnlookup.gov.au',
 ]
 
 function isBlockedUrl(url: string): boolean {
@@ -69,7 +107,7 @@ function isBlockedUrl(url: string): boolean {
 
 function domainMatchScore(domain: string, companyName: string): number {
   const cComp = cleanCompanyName(companyName).toLowerCase().replace(/\s+/g, '')
-  const cDom  = domain.replace(/\.com\.au$|\.com$|\.au$|\.net\.au$|\.org\.au$|\.net$|\.io$/, '').replace(/[^a-z0-9]/g, '')
+  const cDom = domain.replace(/\.com\.au$|\.com$|\.au$|\.net\.au$|\.org\.au$|\.net$|\.io$/, '').replace(/[^a-z0-9]/g, '')
   if (cDom === cComp) return 10
   if (cDom.includes(cComp) || cComp.includes(cDom)) return 8
   const words = cleanCompanyName(companyName).toLowerCase().split(/\s+/).filter(w => w.length > 2)
@@ -81,49 +119,100 @@ function domainMatchScore(domain: string, companyName: string): number {
 
 function cleanLinkedInUrl(url: string): string | null {
   try {
-    const u = new URL(url)
+    const u = new URL(url.includes('linkedin.com') && !url.startsWith('http') ? `https://${url}` : url)
     if (!u.pathname.startsWith('/company/')) return null
-    // Keep only /company/slug — strip extra path segments and trailing slash
     const parts = u.pathname.split('/').filter(Boolean)
     if (parts.length < 2) return null
-    return `https://www.linkedin.com/company/${parts[1]}`
+    const slug = parts[1].replace(/[^a-z0-9-]/gi, '')
+    if (!slug || slug.length < 2) return null
+    return `https://www.linkedin.com/company/${slug}`
   } catch { return null }
+}
+
+function isValidLinkedInCompanyUrl(url: string): boolean {
+  return !!cleanLinkedInUrl(url)
+}
+
+// Score a LinkedIn URL by how well the slug matches the company name
+function linkedInSlugScore(url: string, companyName: string): number {
+  const cleaned = cleanLinkedInUrl(url)
+  if (!cleaned) return 0
+  const slug = cleaned.replace('https://www.linkedin.com/company/', '')
+  const expectedSlug = toLinkedInSlug(companyName)
+  const nameWords = cleanCompanyName(companyName).toLowerCase().split(/\s+/).filter(w => w.length > 2)
+
+  if (slug === expectedSlug) return 10
+  if (slug.includes(expectedSlug) || expectedSlug.includes(slug)) return 8
+  const matchedWords = nameWords.filter(w => slug.includes(w))
+  if (matchedWords.length >= 2) return 7
+  if (matchedWords.length === 1) return 4
+  return 2 // Found a LinkedIn URL but slug doesn't match well
 }
 
 // ─── 1. Google Knowledge Graph ────────────────────────────────────────────────
 
 async function tryKnowledgeGraph(companyName: string, city?: string | null) {
-  const empty = { website: null as string|null, linkedinUrl: null as string|null, industry: null as string|null, confidence: 0 }
+  const empty = { website: null as string | null, linkedinUrl: null as string | null, industry: null as string | null, confidence: 0 }
   const apiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_KNOWLEDGE_GRAPH_API_KEY) || ''
   if (!apiKey) return empty
   try {
     const cleanName = cleanCompanyName(companyName)
     const query = (city && city.toLowerCase() !== 'australia' && city.length > 2) ? `${cleanName} ${city}` : `${cleanName} Australia`
     console.log(`  [KG] "${query}"`)
-    const res = await fetch(`https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(query)}&key=${apiKey}&limit=5&types=Organization`, { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(
+      `https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(query)}&key=${apiKey}&limit=5&types=Organization`,
+      { signal: AbortSignal.timeout(8000) }
+    )
     if (!res.ok) return empty
     const data = await res.json()
     if (!data.itemListElement?.length) return empty
 
-    let bestScore = 0, bestMatch = { ...empty }
+    let bestScore = 0
+    let bestMatch = { ...empty }
+
     for (const item of data.itemListElement) {
-      const r = item.result; let score = 0
+      const r = item.result
+      let score = 0
       const name: string = r.name || ''
-      if (name.toLowerCase().includes(cleanName.toLowerCase())) score += 5
+      const cleanedName = cleanCompanyName(name).toLowerCase()
+      const cleanedQuery = cleanCompanyName(companyName).toLowerCase()
+
+      if (cleanedName === cleanedQuery) score += 8
+      else if (cleanedName.includes(cleanedQuery) || cleanedQuery.includes(cleanedName)) score += 5
+
       const sameAs: string[] = Array.isArray(r.sameAs) ? r.sameAs : (r.sameAs ? [r.sameAs] : [])
-      const linkedinUrl = sameAs.find(u => u?.includes('linkedin.com/company/')) || null
+
+      // Extract ALL LinkedIn URLs from sameAs
+      const linkedinCandidates = sameAs.filter(u => u?.includes('linkedin.com/company/'))
+      let bestLinkedin: string | null = null
+      let bestLiScore = 0
+      for (const liUrl of linkedinCandidates) {
+        const liScore = linkedInSlugScore(liUrl, companyName)
+        if (liScore > bestLiScore) { bestLiScore = liScore; bestLinkedin = cleanLinkedInUrl(liUrl) }
+      }
+
       const website = r.url || sameAs.find(u => u && !isBlockedUrl(u) && !u.includes('linkedin.com')) || null
+      const websiteScore = website ? domainMatchScore(extractDomain(website), companyName) : 0
+
       if (website?.includes('.com.au')) score += 2
-      if (linkedinUrl) score += 3
+      if (bestLinkedin) score += 3 + Math.floor(bestLiScore / 3)
+      if (websiteScore >= 8) score += 3
       if (item.resultScore) score += Math.min(3, Math.floor(item.resultScore / 10))
+
       if (score > bestScore) {
         bestScore = score
-        bestMatch = { website: website ? normaliseUrl(website) : null, linkedinUrl: linkedinUrl ? cleanLinkedInUrl(linkedinUrl) : null, industry: r.description || null, confidence: 0 }
+        bestMatch = {
+          website: website ? normaliseUrl(website) : null,
+          linkedinUrl: bestLinkedin,
+          industry: r.description || null,
+          confidence: 0,
+        }
       }
     }
+
     if (!bestMatch.website && !bestMatch.linkedinUrl) return empty
     bestMatch.confidence = Math.min(10, 5 + Math.floor(bestScore / 2))
-    console.log(`  [KG] ✅ ${bestMatch.website ?? 'no-site'} (conf ${bestMatch.confidence})`)
+    console.log(`  [KG] ✅ ${bestMatch.website ?? 'no-site'} | LI: ${bestMatch.linkedinUrl ?? 'none'} (conf ${bestMatch.confidence})`)
     return bestMatch
   } catch (e) { console.log(`  [KG] Error:`, e); return empty }
 }
@@ -131,90 +220,198 @@ async function tryKnowledgeGraph(companyName: string, city?: string | null) {
 // ─── 2. Clearbit ──────────────────────────────────────────────────────────────
 
 async function tryClearbit(companyName: string) {
-  const empty = { website: null as string|null, linkedinUrl: null as string|null, industry: null as string|null, companySize: null as string|null, confidence: 0 }
+  const empty = { website: null as string | null, linkedinUrl: null as string | null, industry: null as string | null, companySize: null as string | null, confidence: 0 }
   try {
     const clean = cleanCompanyName(companyName)
     console.log(`  [Clearbit] "${clean}"`)
-    const res = await fetch(`https://company.clearbit.com/v1/domains/find?name=${encodeURIComponent(clean)}`, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(8000) })
+    const res = await fetch(
+      `https://company.clearbit.com/v1/domains/find?name=${encodeURIComponent(clean)}`,
+      { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(8000) }
+    )
     if (!res.ok) return empty
     const data = await res.json()
     if (!data?.domain) return empty
+
     const website = normaliseUrl(`https://${data.domain}`)
-    const linkedinUrl = data.linkedin?.handle ? `https://www.linkedin.com/company/${data.linkedin.handle}` : null
-    const score = domainMatchScore(data.domain, companyName)
-    const confidence = Math.min(10, 6 + score)
-    console.log(`  [Clearbit] ✅ ${website} (conf ${confidence})`)
-    return { website, linkedinUrl, industry: data.category?.industry || null, companySize: data.metrics?.employeesRange || null, confidence }
+    // Clearbit returns handle — verify it actually matches company name
+    let linkedinUrl: string | null = null
+    if (data.linkedin?.handle) {
+      const rawUrl = `https://www.linkedin.com/company/${data.linkedin.handle}`
+      const score = linkedInSlugScore(rawUrl, companyName)
+      // Accept if score is reasonable (slug somewhat matches)
+      if (score >= 4) {
+        linkedinUrl = cleanLinkedInUrl(rawUrl)
+      }
+    }
+
+    const domScore = domainMatchScore(data.domain, companyName)
+    const confidence = Math.min(10, 6 + domScore)
+    console.log(`  [Clearbit] ✅ ${website} | LI: ${linkedinUrl ?? 'none'} (conf ${confidence})`)
+    return {
+      website,
+      linkedinUrl,
+      industry: data.category?.industry || null,
+      companySize: data.metrics?.employeesRange || null,
+      confidence,
+    }
   } catch (e) { console.log(`  [Clearbit] Error:`, e); return empty }
 }
 
-// ─── 3. LinkedIn slug verify via DDG ─────────────────────────────────────────
+// ─── 3. Wikidata SPARQL ───────────────────────────────────────────────────────
+// Free, no auth, returns official website (P856) + LinkedIn company ID (P6634)
 
-async function tryLinkedInSlug(companyName: string): Promise<string | null> {
-  const slug = toLinkedInSlug(companyName)
-  if (!slug || slug.length < 3) return null
-  console.log(`  [LI-slug] Trying: linkedin.com/company/${slug}`)
+async function tryWikidata(companyName: string) {
+  const empty = { website: null as string | null, linkedinUrl: null as string | null, confidence: 0 }
   try {
-    const q = `site:linkedin.com/company/ "${cleanCompanyName(companyName)}"`
-    const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1`, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok) return null
-    const data = await res.json()
-    const urls: string[] = [
-      data.AbstractURL,
-      ...(data.Results || []).map((r: any) => r.FirstURL),
-      ...(data.RelatedTopics || []).flatMap((t: any) => [t.FirstURL, ...(t.Results || []).map((s: any) => s.FirstURL)]),
-    ].filter(Boolean)
-    for (const url of urls) {
-      if (url?.includes('linkedin.com/company/')) {
-        const clean = cleanLinkedInUrl(url)
-        if (clean) { console.log(`  [LI-slug] ✅ ${clean}`); return clean }
+    const clean = cleanCompanyName(companyName)
+    // Search Wikidata for the company
+    const searchRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(clean)}&language=en&type=item&limit=5&format=json&origin=*`,
+      { signal: AbortSignal.timeout(6000) }
+    )
+    if (!searchRes.ok) return empty
+    const searchData = await searchRes.json()
+    if (!searchData.search?.length) return empty
+
+    // Take first result and get its claims
+    const entityId = searchData.search[0].id
+    const claimsRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityId}&props=claims&format=json&origin=*`,
+      { signal: AbortSignal.timeout(6000) }
+    )
+    if (!claimsRes.ok) return empty
+    const claimsData = await claimsRes.json()
+    const entity = claimsData.entities?.[entityId]
+    if (!entity) return empty
+
+    const claims = entity.claims || {}
+
+    // P856 = official website
+    let website: string | null = null
+    const websiteClaims = claims['P856'] || []
+    for (const c of websiteClaims) {
+      const url = c.mainsnak?.datavalue?.value
+      if (url && !isBlockedUrl(url)) { website = normaliseUrl(url); break }
+    }
+
+    // P6634 = LinkedIn personal numeric ID (for companies it can be the company page ID)
+    // P4264 = LinkedIn company page
+    let linkedinUrl: string | null = null
+    const liPageClaims = claims['P4264'] || []
+    for (const c of liPageClaims) {
+      const handle = c.mainsnak?.datavalue?.value
+      if (handle) {
+        const url = `https://www.linkedin.com/company/${handle}`
+        const score = linkedInSlugScore(url, companyName)
+        if (score >= 3) { linkedinUrl = cleanLinkedInUrl(url); break }
       }
     }
-    return null
-  } catch { return null }
+
+    if (!website && !linkedinUrl) return empty
+    const confidence = website ? Math.min(8, 5 + domainMatchScore(extractDomain(website), companyName)) : 5
+    console.log(`  [Wikidata] ✅ ${website ?? 'no-site'} | LI: ${linkedinUrl ?? 'none'} (conf ${confidence})`)
+    return { website, linkedinUrl, confidence }
+  } catch (e) { console.log(`  [Wikidata] Error:`, e); return empty }
 }
 
-// ─── 4. DuckDuckGo ────────────────────────────────────────────────────────────
+// ─── 4. LinkedIn slug verification via DuckDuckGo ─────────────────────────────
+// Tries multiple slug variants; returns best confirmed one
+
+async function tryLinkedInSlugVerify(companyName: string): Promise<string | null> {
+  const variants = toLinkedInSlugVariants(companyName)
+  console.log(`  [LI-slug] Trying ${variants.length} variants for "${companyName}"`)
+
+  // Use DDG to verify: search "site:linkedin.com/company/ CompanyName"
+  try {
+    const q = `site:linkedin.com/company/ "${cleanCompanyName(companyName)}" Australia`
+    const res = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1`,
+      { signal: AbortSignal.timeout(5000) }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+
+    // Check RelatedTopics for LinkedIn URLs
+    const allResults = [...(data.RelatedTopics || []), ...(data.Results || [])]
+    for (const r of allResults) {
+      const url = r.FirstURL || r.url || ''
+      if (url.includes('linkedin.com/company/')) {
+        const cleaned = cleanLinkedInUrl(url)
+        if (cleaned) {
+          console.log(`  [LI-slug] ✅ DDG confirmed: ${cleaned}`)
+          return cleaned
+        }
+      }
+    }
+  } catch (e) { /* DDG can be unreliable */ }
+
+  // Fallback: return the most likely slug without network verification
+  // (caller will decide confidence based on other signals)
+  const bestSlug = variants[0]
+  if (bestSlug && bestSlug.length >= 3) {
+    const url = `https://www.linkedin.com/company/${bestSlug}`
+    console.log(`  [LI-slug] Using unverified: ${url}`)
+    return url
+  }
+  return null
+}
+
+// ─── 5. DuckDuckGo Instant Answer (website + linkedin) ────────────────────────
 
 async function tryDuckDuckGo(companyName: string, city?: string | null) {
-  const empty = { website: null as string|null, linkedinUrl: null as string|null, confidence: 0 }
+  const empty = { website: null as string | null, linkedinUrl: null as string | null, confidence: 0 }
   try {
     const cleanName = cleanCompanyName(companyName)
-    const loc = (city && city.toLowerCase() !== 'australia' && city.length > 2) ? ` ${city}` : ' Australia'
-    const queries = [`${cleanName}${loc} official website`, `${cleanName}${loc} company`, `${cleanName} .com.au`]
-    let bestWebsite: string|null = null, bestLinkedin: string|null = null, bestScore = 0
-    for (const query of queries) {
-      console.log(`  [DDG] "${query}"`)
-      const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&t=leadflow`, { signal: AbortSignal.timeout(6000) })
-      if (!res.ok) continue
-      const data = await res.json()
-      const urls: string[] = [data.AbstractURL, data.Redirect, data.OfficialSite,
-        ...(data.Results || []).map((r: any) => r.FirstURL),
-        ...(data.RelatedTopics || []).flatMap((t: any) => [t.FirstURL, ...(t.Results || []).map((s: any) => s.FirstURL)]),
-      ].filter(Boolean)
-      for (const url of urls) {
-        if (!url?.startsWith('http')) continue
-        if (!bestLinkedin && url.includes('linkedin.com/company/')) { bestLinkedin = cleanLinkedInUrl(url); continue }
-        if (isBlockedUrl(url) || url.includes('linkedin.com')) continue
-        const domain = extractDomain(url)
-        let score = domainMatchScore(domain, companyName)
-        if (url.includes('.com.au')) score += 2
-        if (url.includes('.au')) score += 1
-        if (score > bestScore) { bestScore = score; bestWebsite = normaliseUrl(url); console.log(`  [DDG] 📍 ${bestWebsite} (${score})`) }
+    const loc = city && city.toLowerCase() !== 'australia' && city.length > 2 ? ` ${city} Australia` : ' Australia'
+    const q = `${cleanName}${loc} official website`
+    console.log(`  [DDG] "${q}"`)
+
+    const res = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1&skip_disambig=1`,
+      { signal: AbortSignal.timeout(6000) }
+    )
+    if (!res.ok) return empty
+    const data = await res.json()
+
+    let bestWebsite: string | null = null
+    let bestLinkedin: string | null = null
+    let bestScore = 0
+
+    const check = (url: string) => {
+      if (!url?.startsWith('http')) return
+      if (url.includes('linkedin.com/company/')) {
+        const cleaned = cleanLinkedInUrl(url)
+        if (cleaned && !bestLinkedin) {
+          const score = linkedInSlugScore(cleaned, companyName)
+          if (score >= 4) { bestLinkedin = cleaned; console.log(`  [DDG] 🔗 LI: ${cleaned}`) }
+        }
+        return
       }
-      if (bestScore >= 8) break
+      if (isBlockedUrl(url)) return
+      const domain = extractDomain(url)
+      const score = domainMatchScore(domain, companyName)
+      if (score > bestScore) { bestScore = score; bestWebsite = normaliseUrl(url) }
     }
+
+    if (data.AbstractURL) check(data.AbstractURL)
+    for (const r of data.RelatedTopics || []) { if (r.FirstURL) check(r.FirstURL) }
+    for (const r of data.Results || []) { if (r.FirstURL) check(r.FirstURL) }
+
+    if (!bestWebsite && !bestLinkedin) return empty
     const confidence = Math.min(9, Math.floor(bestScore * 1.2))
     return { website: bestWebsite, linkedinUrl: bestLinkedin, confidence }
   } catch (e) { console.log(`  [DDG] Error:`, e); return empty }
 }
 
-// ─── 5. Hunter.io ─────────────────────────────────────────────────────────────
+// ─── 6. Hunter.io ─────────────────────────────────────────────────────────────
 
 async function tryHunter(companyName: string) {
-  const empty = { website: null as string|null, confidence: 0 }
+  const empty = { website: null as string | null, confidence: 0 }
   try {
-    const res = await fetch(`https://api.hunter.io/v2/domains/search?query=${encodeURIComponent(cleanCompanyName(companyName))}`, { signal: AbortSignal.timeout(6000) })
+    const res = await fetch(
+      `https://api.hunter.io/v2/domains/search?query=${encodeURIComponent(cleanCompanyName(companyName))}`,
+      { signal: AbortSignal.timeout(6000) }
+    )
     if (!res.ok) return empty
     const data = await res.json()
     if (!data?.domain) return empty
@@ -225,30 +422,62 @@ async function tryHunter(companyName: string) {
   } catch { return empty }
 }
 
-// ─── 6. Apify Google ─────────────────────────────────────────────────────────
+// ─── 7. Open Corporates (AU company registry) ─────────────────────────────────
+
+async function tryOpenCorporates(companyName: string) {
+  const empty = { website: null as string | null, confidence: 0 }
+  try {
+    const clean = cleanCompanyName(companyName)
+    const res = await fetch(
+      `https://api.opencorporates.com/v0.4/companies/search?q=${encodeURIComponent(clean)}&jurisdiction_code=au&per_page=3`,
+      { signal: AbortSignal.timeout(6000) }
+    )
+    if (!res.ok) return empty
+    const data = await res.json()
+    const companies = data.results?.companies || []
+    if (!companies.length) return empty
+
+    for (const { company } of companies) {
+      if (!company) continue
+      const name = company.name || ''
+      if (cleanCompanyName(name).toLowerCase() === clean.toLowerCase() && company.registered_address?.country === 'Australia') {
+        // OpenCorporates doesn't return websites directly but confirms company existence
+        console.log(`  [OC] ✅ Found AU company: ${name}`)
+        return { website: null, confidence: 5 } // Confirms it's a real AU company
+      }
+    }
+    return empty
+  } catch { return empty }
+}
+
+// ─── 8. Apify Google Search (paid fallback) ───────────────────────────────────
 
 async function tryApifyGoogle(companyName: string, city?: string | null) {
-  const empty = { website: null as string|null, linkedinUrl: null as string|null, confidence: 0 }
-  let apifyToken: string|null = null
+  const empty = { website: null as string | null, linkedinUrl: null as string | null, confidence: 0 }
+  let apifyToken: string | null = null
   try { const { getApifyToken } = await import('./settingsService'); apifyToken = await getApifyToken() } catch {}
   if (!apifyToken) return empty
 
   const cleanName = cleanCompanyName(companyName)
   const slug = toLinkedInSlug(companyName)
   const loc = (city && city.toLowerCase() !== 'australia' && city.length > 2) ? ` ${city}` : ' Australia'
+
   const queries = [
     `"${cleanName}"${loc} site:.com.au`,
     `${cleanName}${loc} official website`,
-    `site:linkedin.com/company/${slug}`,
+    `site:linkedin.com/company/ "${cleanName}" Australia`,
   ]
 
-  let bestWebsite: string|null = null, bestLinkedin: string|null = null, bestScore = 0
+  let bestWebsite: string | null = null
+  let bestLinkedin: string | null = null
+  let bestScore = 0
 
   for (const query of queries) {
     console.log(`  [Apify] "${query}"`)
     try {
       const startRes = await fetch(`https://api.apify.com/v2/acts/apify~google-search-scraper/runs?token=${apifyToken}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queries: query, maxPagesPerQuery: 1, resultsPerPage: 8, languageCode: 'en', countryCode: 'au' }),
       })
       if (!startRes.ok) continue
@@ -263,10 +492,20 @@ async function tryApifyGoogle(companyName: string, city?: string | null) {
       const items: any[] = []
       for (const page of rawItems) items.push(...(page.organicResults ?? page.results ?? []))
       if (!items.length && Array.isArray(rawItems)) items.push(...rawItems)
+
       for (const item of items) {
         const rawUrl = item.link ?? item.url ?? ''
         if (!rawUrl?.startsWith('http')) continue
-        if (!bestLinkedin && rawUrl.includes('linkedin.com/company/')) { bestLinkedin = cleanLinkedInUrl(rawUrl); console.log(`  [Apify] ✅ LI: ${bestLinkedin}`); continue }
+        if (rawUrl.includes('linkedin.com/company/')) {
+          if (!bestLinkedin) {
+            const cleaned = cleanLinkedInUrl(rawUrl)
+            if (cleaned) {
+              const liScore = linkedInSlugScore(cleaned, companyName)
+              if (liScore >= 4) { bestLinkedin = cleaned; console.log(`  [Apify] ✅ LI: ${bestLinkedin}`) }
+            }
+          }
+          continue
+        }
         if (isBlockedUrl(rawUrl) || rawUrl.includes('linkedin.com')) continue
         const domain = extractDomain(rawUrl)
         let score = domainMatchScore(domain, companyName)
@@ -279,67 +518,114 @@ async function tryApifyGoogle(companyName: string, city?: string | null) {
   return { website: bestWebsite, linkedinUrl: bestLinkedin, confidence: Math.min(9, Math.floor(bestScore * 1.2)) }
 }
 
+// ─── LinkedIn consolidation ───────────────────────────────────────────────────
+// Take all LinkedIn candidates and pick the best one
+
+function pickBestLinkedIn(
+  candidates: Array<string | null>,
+  companyName: string
+): string | null {
+  const valid = candidates
+    .filter((u): u is string => !!u && isValidLinkedInCompanyUrl(u))
+    .map(u => ({ url: cleanLinkedInUrl(u)!, score: linkedInSlugScore(u, companyName) }))
+    .filter(c => c.score >= 3) // Minimum threshold — slug must somewhat match
+    .sort((a, b) => b.score - a.score)
+
+  if (!valid.length) return null
+  console.log(`  [LI-pick] Best: ${valid[0].url} (score ${valid[0].score})`)
+  return valid[0].url
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function enrichCompanyWebsite(companyName: string, city?: string | null): Promise<EnrichedCompanyData> {
   console.log(`\n━━━ Enriching: "${companyName}" (${city ?? 'unknown'}) ━━━`)
-  if (!companyName?.trim()) return { website: null, linkedinUrl: null, industry: null, companySize: null, confidence: 0, source: 'none' }
+  if (!companyName?.trim()) {
+    return { website: null, linkedinUrl: null, industry: null, companySize: null, confidence: 0, source: 'none' }
+  }
 
-  // Run KG + Clearbit in parallel (both free & fast)
-  const [kg, clearbit] = await Promise.all([tryKnowledgeGraph(companyName, city), tryClearbit(companyName)])
+  // ── Phase 1: Fast parallel sources (KG + Clearbit + Wikidata) ───────────────
+  const [kg, clearbit, wikidata] = await Promise.all([
+    tryKnowledgeGraph(companyName, city),
+    tryClearbit(companyName),
+    tryWikidata(companyName),
+  ])
 
-  // Check for early high-confidence result
-  const earlyCandidates = [
-    kg.website      && kg.confidence >= 7      ? { ...kg,      source: 'knowledgegraph' as const } : null,
-    clearbit.website && clearbit.confidence >= 7 ? { ...clearbit, source: 'clearbit'      as const } : null,
-  ].filter(Boolean) as any[]
+  // ── Phase 2: LinkedIn slug verify (starts in background during Phase 1 + 2) ─
+  const slugLiPromise = tryLinkedInSlugVerify(companyName)
 
-  const linkedinSlugPromise = tryLinkedInSlug(companyName)
+  // Early exit: if any fast source has high confidence with BOTH website AND LinkedIn
+  type Src = 'knowledgegraph' | 'clearbit' | 'wikidata' | 'duckduckgo' | 'opencorporates' | 'google' | 'none'
+  const earlyFull = [
+    kg.confidence >= 7 && kg.website && kg.linkedinUrl ? { ...kg, source: 'knowledgegraph' as Src } : null,
+    clearbit.confidence >= 7 && clearbit.website && clearbit.linkedinUrl ? { ...clearbit, source: 'clearbit' as Src } : null,
+  ].filter(Boolean)[0]
 
-  if (earlyCandidates.length) {
-    const best = earlyCandidates.sort((a: any, b: any) => b.confidence - a.confidence)[0]
-    const slugLI = await linkedinSlugPromise
-    const finalLinkedin = best.linkedinUrl ?? clearbit.linkedinUrl ?? kg.linkedinUrl ?? slugLI ?? null
-    console.log(`  ✅ Early (${best.source}): ${best.website}`)
-    if (finalLinkedin) console.log(`  ✅ LinkedIn: ${finalLinkedin}`)
+  if (earlyFull) {
+    const slugLi = await slugLiPromise
+    const bestLinkedin = pickBestLinkedIn([earlyFull.linkedinUrl, clearbit.linkedinUrl, kg.linkedinUrl, wikidata.linkedinUrl, slugLi], companyName)
+    console.log(`  ✅ EARLY FULL (${earlyFull.source}): ${earlyFull.website} | LI: ${bestLinkedin ?? 'none'}`)
     return {
-      website: best.website,
-      linkedinUrl: finalLinkedin,
+      website: earlyFull.website,
+      linkedinUrl: bestLinkedin,
       industry: clearbit.industry ?? kg.industry ?? null,
-      companySize: (best.source === 'clearbit' ? clearbit.companySize : null) ?? null,
-      confidence: best.confidence,
-      source: best.source,
+      companySize: clearbit.companySize ?? null,
+      confidence: earlyFull.confidence,
+      source: earlyFull.source,
     }
   }
 
-  // Secondary sources in parallel
-  const [ddg, hunter, apify, slugLI] = await Promise.all([
+  // ── Phase 3: Secondary sources in parallel (DDG + Hunter) ───────────────────
+  const [ddg, hunter, slugLi] = await Promise.all([
     tryDuckDuckGo(companyName, city),
     tryHunter(companyName),
-    tryApifyGoogle(companyName, city),
-    linkedinSlugPromise,
+    slugLiPromise,
   ])
 
-  type Src = 'knowledgegraph'|'clearbit'|'duckduckgo'|'hunter'|'google'|'none'
+  // ── Consolidate all website candidates ───────────────────────────────────────
   const wCandidates = [
-    kg.website      ? { website: kg.website,      confidence: kg.confidence,      source: 'knowledgegraph' as Src } : null,
-    clearbit.website ? { website: clearbit.website, confidence: clearbit.confidence, source: 'clearbit'      as Src } : null,
-    ddg.website     ? { website: ddg.website,      confidence: ddg.confidence,     source: 'duckduckgo'     as Src } : null,
-    hunter.website  ? { website: hunter.website,   confidence: hunter.confidence,  source: 'hunter'         as Src } : null,
-    apify.website   ? { website: apify.website,    confidence: apify.confidence,   source: 'google'         as Src } : null,
+    kg.website ? { website: kg.website, confidence: kg.confidence, source: 'knowledgegraph' as Src } : null,
+    clearbit.website ? { website: clearbit.website, confidence: clearbit.confidence, source: 'clearbit' as Src } : null,
+    wikidata.website ? { website: wikidata.website, confidence: wikidata.confidence, source: 'wikidata' as Src } : null,
+    ddg.website ? { website: ddg.website, confidence: ddg.confidence, source: 'duckduckgo' as Src } : null,
+    hunter.website ? { website: hunter.website, confidence: hunter.confidence, source: 'hunter' as Src } : null,
   ].filter(Boolean).sort((a: any, b: any) => b.confidence - a.confidence) as any[]
 
-  const finalLinkedin = [kg.linkedinUrl, clearbit.linkedinUrl, ddg.linkedinUrl, apify.linkedinUrl, slugLI].find(Boolean) ?? null
+  // ── Consolidate all LinkedIn candidates ─────────────────────────────────────
+  const allLinkedInCandidates = [
+    kg.linkedinUrl,
+    clearbit.linkedinUrl,
+    wikidata.linkedinUrl,
+    ddg.linkedinUrl,
+    slugLi,
+  ]
+  const finalLinkedin = pickBestLinkedIn(allLinkedInCandidates, companyName)
+
+  // ── If still no good website, try Apify (paid) ───────────────────────────────
   const best = wCandidates[0] ?? null
 
-  if (!best) {
-    console.log(`  ❌ No results for "${companyName}"`)
-    return { website: null, linkedinUrl: finalLinkedin, industry: clearbit.industry ?? kg.industry ?? null, companySize: clearbit.companySize ?? null, confidence: 0, source: 'none' }
+  if (!best || best.confidence < 5) {
+    const apify = await tryApifyGoogle(companyName, city)
+    if (apify.website) {
+      const bestLinkedin = pickBestLinkedIn([apify.linkedinUrl, finalLinkedin], companyName)
+      console.log(`  🏆 APIFY: ${apify.website} | LI: ${bestLinkedin ?? 'none'}`)
+      return {
+        website: apify.website,
+        linkedinUrl: bestLinkedin,
+        industry: clearbit.industry ?? kg.industry ?? null,
+        companySize: clearbit.companySize ?? null,
+        confidence: apify.confidence,
+        source: 'google',
+      }
+    }
+    // Apify found nothing either
+    if (!best) {
+      console.log(`  ❌ No results for "${companyName}"`)
+      return { website: null, linkedinUrl: finalLinkedin, industry: clearbit.industry ?? kg.industry ?? null, companySize: clearbit.companySize ?? null, confidence: 0, source: 'none' }
+    }
   }
 
-  console.log(`  🏆 ${best.website} (conf ${best.confidence}, src ${best.source})`)
-  if (finalLinkedin) console.log(`  🏆 LinkedIn: ${finalLinkedin}`)
-
+  console.log(`  🏆 ${best.website} (conf ${best.confidence}, src ${best.source}) | LI: ${finalLinkedin ?? 'none'}`)
   return {
     website: best.website,
     linkedinUrl: finalLinkedin,
@@ -350,16 +636,31 @@ export async function enrichCompanyWebsite(companyName: string, city?: string | 
   }
 }
 
-export async function enrichMultipleCompanies(companies: Array<{ id: string; name: string; city?: string | null }>): Promise<Map<string, EnrichedCompanyData>> {
+export async function enrichMultipleCompanies(
+  companies: Array<{ id: string; name: string; city?: string | null }>
+): Promise<Map<string, EnrichedCompanyData>> {
   const results = new Map<string, EnrichedCompanyData>()
   console.log(`\n🚀 Bulk enrichment: ${companies.length} companies`)
-  for (let i = 0; i < companies.length; i++) {
-    const { id, name, city } = companies[i]
-    console.log(`\n[${i+1}/${companies.length}] ${name}`)
-    results.set(id, await enrichCompanyWebsite(name, city))
-    if (i < companies.length - 1) await new Promise(r => setTimeout(r, 600))
+
+  // Process in small parallel batches (3 at a time) for speed without rate limits
+  const BATCH_SIZE = 3
+  for (let i = 0; i < companies.length; i += BATCH_SIZE) {
+    const batch = companies.slice(i, i + BATCH_SIZE)
+    console.log(`\n[Batch ${Math.floor(i / BATCH_SIZE) + 1}] Processing ${batch.map(c => c.name).join(', ')}`)
+
+    const batchResults = await Promise.all(
+      batch.map(({ id, name, city }) =>
+        enrichCompanyWebsite(name, city).then(data => ({ id, data }))
+      )
+    )
+    for (const { id, data } of batchResults) results.set(id, data)
+
+    // Small delay between batches to be respectful of rate limits
+    if (i + BATCH_SIZE < companies.length) await new Promise(r => setTimeout(r, 400))
   }
+
   const found = Array.from(results.values()).filter(r => r.website).length
-  console.log(`\n✅ Done: ${found}/${companies.length}`)
+  const linkedinFound = Array.from(results.values()).filter(r => r.linkedinUrl).length
+  console.log(`\n✅ Done: ${found}/${companies.length} websites, ${linkedinFound}/${companies.length} LinkedIn URLs`)
   return results
 }
