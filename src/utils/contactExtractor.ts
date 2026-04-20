@@ -1,28 +1,17 @@
 // src/utils/contactExtractor.ts
 /**
- * ─────────────────────────────────────────────────────────────────────────────
  * ENHANCED CONTACT EXTRACTOR & JOB FILTER
- * ─────────────────────────────────────────────────────────────────────────────
- * Strategy: Multi-pass scoring system.
- *
- * Instead of a single binary check, each filter function returns a FilterVerdict
- * that includes a confidence score (0–100) and a human-readable reason.
- * The scraper can then decide:
- *   • score >= 80  → hard block (definitely not wanted)
- *   • score 50–79 → soft block (log as warning, still filter out)
- *   • score < 50  → pass (legitimate company)
- *
- * FREE AI ENHANCEMENT: We use the Anthropic Messages API (which is already
- * available in this project via the existing fetch infrastructure) to classify
- * ambiguous cases — specifically when our keyword heuristics score 30–70.
- * High-confidence keyword hits never need an AI round-trip, keeping costs near zero.
- * ─────────────────────────────────────────────────────────────────────────────
+ * ─────────────────────────────────────────
+ * Fix 1: Added single-word company name recruitment detection
+ *        e.g. "ABC Recruitment", "XYZ Staffing", "Smith Consulting"
+ * Fix 2: Extended KNOWN_AGENCIES list with more AU agencies
+ * Fix 3: Added COMPANY_NAME_RECRUITMENT_WORDS for single-word matching
  */
 
 export interface FilterVerdict {
   shouldFilter: boolean
   reason: string
-  confidence: number       // 0–100 — how confident we are
+  confidence: number
   category: FilterCategory
 }
 
@@ -81,13 +70,11 @@ export function extractContactName(text: string): string | null {
 
 function lc(s: string) { return s.toLowerCase() }
 
-/** Count how many terms from a list appear in text */
 function countMatches(text: string, terms: string[]): number {
   const t = lc(text)
   return terms.filter(term => t.includes(lc(term))).length
 }
 
-/** Find which terms matched */
 function findMatches(text: string, terms: string[]): string[] {
   const t = lc(text)
   return terms.filter(term => t.includes(lc(term)))
@@ -96,7 +83,7 @@ function findMatches(text: string, terms: string[]): string[] {
 // ─── 1. Recruitment / Staffing Agency ────────────────────────────────────────
 
 /**
- * KNOWN agency names — exact match for high confidence
+ * KNOWN agency names — exact/partial match for high confidence
  */
 const KNOWN_AGENCIES: string[] = [
   // Big international
@@ -117,10 +104,21 @@ const KNOWN_AGENCIES: string[] = [
   'pulse staffing', 'recruitment edge', 'seek talent solutions',
   'resource solutions', 'horner recruitment', 'sportspeople',
   'miller leith', 'profusion group',
+  // Extra AU agencies commonly seen on Seek
+  'preacta recruitment', 'scaleup recruitment', 'scalup recruitment',
+  'levyl', 'beaumont people', 'beaumont consulting', 'engage personnel',
+  'lawson elliot', 'lawson & elliot', 'peoplecorp', 'people corp',
+  'talent web', 'talentweb', 'parity consulting', 'capability group',
+  'careerone', 'career one', 'trojan recruitment', 'trojan staffing',
+  'veritas recruitment', 'sirius people', 'watermark search',
+  'lotus people', 'verve partners', 'smaart recruitment',
+  'apex group', 'apexhr', 'hoban recruitment', 'aston carter',
+  'harvey nash', 'allegis group', 'tpk solutions', 'talenting',
+  'talentpath', 'horiozn', 'recruiting for good',
 ]
 
 /**
- * Generic agency signals — medium confidence
+ * Generic agency signals — medium confidence (multi-word phrases in company name)
  */
 const AGENCY_SIGNALS: string[] = [
   'recruitment agency', 'staffing agency', 'employment agency',
@@ -134,8 +132,26 @@ const AGENCY_SIGNALS: string[] = [
 ]
 
 /**
+ * ⭐ FIX 1: Single words that, if they appear as a whole word in a company name,
+ * strongly indicate it's a recruitment/staffing business.
+ * We do WHOLE WORD matching so "Sales" won't match "salesperson"
+ * but "Recruitment" in "ABC Recruitment Pty Ltd" will match.
+ */
+const RECRUITMENT_SINGLE_WORDS = [
+  'recruitment', 'recruiter', 'recruiters', 'recruiting',
+  'staffing', 'headhunter', 'headhunters', 'headhunting',
+  'resourcing', 'placements', 'placement group',
+  'talent agency', 'search firm',
+]
+
+/**
+ * Suffix patterns — company names ending in these are almost certainly agencies
+ * e.g. "Smith Recruitment", "ABC Staffing Co", "XYZ Talent Group"
+ */
+const AGENCY_NAME_SUFFIXES_REGEX = /\b(recruitment|recruiting|recruiter|staffing|headhunters?|resourcing)\b/i
+
+/**
  * Phrases that appear in job descriptions from agencies
- * These mean the COMPANY posting is an agency, not the hiring client
  */
 const AGENCY_DESCRIPTION_SIGNALS: string[] = [
   'our client is seeking', 'our client requires', 'our client needs',
@@ -161,9 +177,9 @@ export function checkRecruitmentAgency(
 ): FilterVerdict {
   const searchText = `${companyName} ${advertiserName}`
 
-  // Check known agencies — very high confidence
+  // ── Check known agencies list — very high confidence
   const knownMatch = KNOWN_AGENCIES.find(name =>
-    lc(searchText).includes(name) || lc(companyName) === name
+    lc(searchText).includes(lc(name))
   )
   if (knownMatch) {
     return {
@@ -174,7 +190,17 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // Check agency signals in company name — high confidence
+  // ── ⭐ FIX: Single-word whole-word match in company name (e.g. "ABC Recruitment")
+  if (AGENCY_NAME_SUFFIXES_REGEX.test(companyName)) {
+    return {
+      shouldFilter: true,
+      reason: `Company name contains recruitment keyword: "${companyName}"`,
+      confidence: 92,
+      category: 'recruitment_agency',
+    }
+  }
+
+  // ── Check agency signals (multi-word phrases) in company name — high confidence
   const nameSignals = findMatches(searchText, AGENCY_SIGNALS)
   if (nameSignals.length >= 2) {
     return {
@@ -188,13 +214,13 @@ export function checkRecruitmentAgency(
     return {
       shouldFilter: true,
       reason: `Company name suggests agency: "${nameSignals[0]}"`,
-      confidence: 75,
+      confidence: 78,
       category: 'recruitment_agency',
     }
   }
 
-  // Check description for agency intro phrases
-  const descSignals = findMatches(description.slice(0, 300), AGENCY_DESCRIPTION_SIGNALS)
+  // ── Check description for agency intro phrases (first 400 chars)
+  const descSignals = findMatches(description.slice(0, 400), AGENCY_DESCRIPTION_SIGNALS)
   if (descSignals.length >= 2) {
     return {
       shouldFilter: true,
@@ -212,7 +238,7 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // Check website
+  // ── Check website
   if (website && isRecruitmentWebsite(website)) {
     return {
       shouldFilter: true,
@@ -299,7 +325,6 @@ export function checkHRConsulting(
     }
   }
   if (nameMatches.length === 1) {
-    // Confirm with description
     const descMatches = findMatches(description, HR_DESCRIPTION_SIGNALS)
     if (descMatches.length > 0) {
       return {
@@ -324,7 +349,6 @@ export function checkHRConsulting(
 const LAW_FIRM_NAME_SIGNALS: string[] = [
   'lawyers', 'solicitors', 'barristers', 'legal', 'law group',
   'law firm', 'chambers', 'attorneys', 'counsel',
-  // Common AU law firm suffix patterns handled below
 ]
 
 const LAW_FIRM_DESCRIPTION_SIGNALS: string[] = [
@@ -343,7 +367,6 @@ const LAW_DESCRIPTION_TERMS: string[] = [
   'practising certificate',
 ]
 
-// Pattern to detect "Surname & Surname Lawyers" or "Smith Partners Solicitors"
 const LAW_FIRM_PATTERN = /\b(?:lawyers?|solicitors?|barristers?|legal|law|counsel|chambers|attorneys?)\b/i
 
 export function checkLawFirm(
@@ -354,9 +377,7 @@ export function checkLawFirm(
 ): FilterVerdict {
   const combined = `${companyName} ${jobTitle} ${description.slice(0, 500)} ${website || ''}`
 
-  // Strong: company name matches law firm name pattern
   if (LAW_FIRM_PATTERN.test(companyName)) {
-    // Verify it's actually a firm and not e.g. "SalesLaw CRM"
     const descConfirmation = findMatches(description, LAW_DESCRIPTION_TERMS)
     if (descConfirmation.length > 0) {
       return {
@@ -397,7 +418,6 @@ export function checkLawFirm(
   return { shouldFilter: false, reason: '', confidence: 0, category: 'pass' }
 }
 
-// Backwards-compat shim
 export function isLawFirmRelated(
   companyName: string,
   jobTitle: string,
@@ -460,17 +480,13 @@ export function isSalesJob(classification: string): boolean {
   return lc(classification).includes('sales')
 }
 
-// ─── 8. Composite filter: run all checks and return verdict ──────────────────
+// ─── 8. Composite filter ─────────────────────────────────────────────────────
 
 export interface CompositeFilterResult {
   shouldFilter: boolean
   verdict: FilterVerdict
 }
 
-/**
- * Run all filters in priority order. Returns on first hard block.
- * CONFIDENCE THRESHOLD: >= 70 = filter out
- */
 export function runAllFilters(params: {
   companyName: string
   advertiserName: string
@@ -483,7 +499,6 @@ export function runAllFilters(params: {
 }): CompositeFilterResult {
   const THRESHOLD = 70
 
-  // Sales filter first (cheapest check)
   if (params.filterSalesOnly && !isSalesJob(params.classification)) {
     return {
       shouldFilter: true,
@@ -496,13 +511,11 @@ export function runAllFilters(params: {
     }
   }
 
-  // Private advertiser
   const privateVerdict = checkPrivateAdvertiser(params.advertiserName, params.isPrivate)
   if (privateVerdict.shouldFilter && privateVerdict.confidence >= THRESHOLD) {
     return { shouldFilter: true, verdict: privateVerdict }
   }
 
-  // Recruitment agency (checks name + description + website)
   const agencyVerdict = checkRecruitmentAgency(
     params.companyName,
     params.advertiserName,
@@ -513,19 +526,16 @@ export function runAllFilters(params: {
     return { shouldFilter: true, verdict: agencyVerdict }
   }
 
-  // No-agency disclaimer
   const disclaimerVerdict = checkNoAgencyDisclaimer(params.description)
   if (disclaimerVerdict.shouldFilter && disclaimerVerdict.confidence >= THRESHOLD) {
     return { shouldFilter: true, verdict: disclaimerVerdict }
   }
 
-  // HR consulting
   const hrVerdict = checkHRConsulting(params.companyName, params.description)
   if (hrVerdict.shouldFilter && hrVerdict.confidence >= THRESHOLD) {
     return { shouldFilter: true, verdict: hrVerdict }
   }
 
-  // Law firm
   const lawVerdict = checkLawFirm(
     params.companyName,
     params.jobTitle,
@@ -542,12 +552,8 @@ export function runAllFilters(params: {
   }
 }
 
-// ─── Backwards-compat shims (so existing code still compiles) ─────────────────
 export { checkNoAgencyDisclaimer as checkUnwantedPhrases }
-// src/utils/contactExtractor.ts
-// Add these lines at the very bottom of the file
 
-// ─── Type exports for useScraper ──────────────────────────────────────────────
 export type FilteredJobRecord = {
   companyName: string
   jobTitle: string
@@ -556,6 +562,3 @@ export type FilteredJobRecord = {
   confidence: number
   jobLink?: string
 }
-
-// Re-export runAllFilters type for clarity
-export type { FilterVerdict, FilterCategory, CompositeFilterResult }
