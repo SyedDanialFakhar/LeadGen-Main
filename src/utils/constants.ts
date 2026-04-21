@@ -11,6 +11,7 @@ export const CITIES: string[] = [
   'Adelaide',
   'Canberra',
   'Hobart',
+  'Northern Territory',
   'Darwin',
   'Gold Coast',
   'Newcastle',
@@ -159,22 +160,24 @@ export const PRIVATE_ADVERTISER_KEYWORDS: string[] = [
   'Direct Employer',
 ]
 
+// src/types/lead.ts - Add these exports
+
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
-  new: 'New',
-  assessed: 'Assessed',
-  called: 'Called',
-  converted: 'Converted',
-  closed: 'Closed',
-  deleted: 'Deleted',
+  'Not Sent': 'Not Sent',
+  'Closed': 'Closed',
+  'Email 1': 'Email 1 Sent',
+  'Email 2': 'Email 2 Sent',
+  'Email 3': 'Email 3 Sent',
+  'Sequence Closed': 'Sequence Closed',
 }
 
 export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
-  new: 'bg-slate-100 text-slate-700',
-  assessed: 'bg-blue-100 text-blue-700',
-  called: 'bg-yellow-100 text-yellow-800',
-  converted: 'bg-green-100 text-green-800',
-  closed: 'bg-slate-200 text-slate-500',
-  deleted: 'bg-red-100 text-red-500 line-through',
+  'Not Sent': 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400',
+  'Email 1': 'bg-emerald-500 text-white shadow-sm',
+  'Email 2': 'bg-blue-500 text-white shadow-sm',
+  'Email 3': 'bg-purple-500 text-white shadow-sm',
+  'Closed': 'bg-gray-500 text-white shadow-sm',
+  'Sequence Closed': 'bg-slate-700 text-white shadow-sm',
 }
 
 export const EMPLOYEE_COUNT_RANGES: Record<string, [number, number]> = {
