@@ -1,14 +1,15 @@
 // src/utils/contactExtractor.ts
 /**
- * LETHAL RECRUITER & AGENCY FILTER — v3
+ * LETHAL RECRUITER & AGENCY FILTER — v4
  * ──────────────────────────────────────────────────────────────────────────────
- * NEW: checkRecruiterProfile() — uses Apify recruiterProfile data directly.
- * If recruiterProfile.name / agencyName / agencyWebsite / specialisations /
- * placementCount / reviewCount is populated with a real value (not "N/A"),
- * the job was posted BY a recruiter. Filtered at 100% confidence.
- *
- * This catches "SF People / Sally Falkinder" style jobs that slip through
- * name-based checks because the company name looks innocent.
+ * v4 Changes:
+ * - extractEmails() now filters out generic/role-based emails and only keeps
+ *   personal emails (e.g. john@company.com, not hr@, careers@, info@, etc.)
+ * - extractContactName() now validates properly — rejects sentence fragments
+ *   and non-name garbage like "for families navigating one of life"
+ * - checkRecruitmentAgency() has broader keyword coverage to catch
+ *   "Fuse Recruitment", "ABC Recruiters", "XYZ Talent" style names
+ * - Added advertiserName word-level regex check (same as companyName)
  */
 
 export interface FilterVerdict {
@@ -30,12 +31,101 @@ export type FilterCategory =
   | 'recruiter_profile'
   | 'pass'
 
-// ─── Contact extraction ────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function lc(s: string): string { return s.toLowerCase() }
+
+function findMatches(text: string, terms: string[]): string[] {
+  const t = lc(text)
+  return terms.filter(term => t.includes(lc(term)))
+}
+
+// ─── Email extraction — personal only ────────────────────────────────────────
+/**
+ * Generic/role-based email prefixes that are NOT personal contacts.
+ * We only want personal emails like john.smith@company.com
+ */
+const GENERIC_EMAIL_PREFIXES: string[] = [
+  'info', 'hello', 'hi', 'hey',
+  'contact', 'contactus', 'contact-us',
+  'enquiries', 'enquiry', 'inquiries', 'inquiry',
+  'admin', 'administration',
+  'hr', 'humanresources', 'human-resources', 'human.resources',
+  'careers', 'career',
+  'jobs', 'job',
+  'recruitment', 'recruit', 'recruiting',
+  'apply', 'applications', 'application',
+  'resumes', 'resume', 'cv',
+  'talent', 'talentacquisition', 'talent-acquisition',
+  'hiring', 'hire',
+  'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+  'support', 'help', 'helpdesk',
+  'mail', 'email', 'post',
+  'office', 'reception', 'receptionist', 'front-desk', 'frontdesk',
+  'general', 'general-enquiries',
+  'team', 'staff',
+  'management', 'manager',
+  'sales', 'marketing', 'accounts', 'finance', 'billing', 'payroll',
+  'operations', 'ops',
+  'legal', 'compliance',
+  'news', 'newsletter', 'updates', 'notifications',
+  'press', 'media', 'pr',
+  'privacy', 'security', 'abuse', 'report',
+  'webmaster', 'web', 'it', 'tech', 'technical',
+  'feedback', 'suggestions',
+  'partners', 'partnerships',
+  'accommodations', 'accessibility', 'diversity',
+  'reasonableaccommodations',
+  'peopleteam', 'people-team', 'people&culture', 'peopleandculture',
+]
+
+/**
+ * Returns true if an email looks like a personal email (e.g. john@company.com)
+ * rather than a generic role/department email.
+ */
+function isPersonalEmail(email: string): boolean {
+  const prefix = email.split('@')[0]?.toLowerCase() ?? ''
+
+  // Reject if prefix exactly matches a generic term
+  if (GENERIC_EMAIL_PREFIXES.includes(prefix)) return false
+
+  // Reject if prefix STARTS WITH a generic term followed by nothing or a separator
+  // e.g. "careers2024", "hr.team", "admin+seek"
+  for (const generic of GENERIC_EMAIL_PREFIXES) {
+    if (
+      prefix === generic ||
+      prefix.startsWith(generic + '.') ||
+      prefix.startsWith(generic + '-') ||
+      prefix.startsWith(generic + '_') ||
+      prefix.startsWith(generic + '+') ||
+      prefix.startsWith(generic + '@') ||
+      // e.g. "hrmanager", "jobsau", "careerspage"
+      (prefix.startsWith(generic) && prefix.length <= generic.length + 4)
+    ) {
+      return false
+    }
+  }
+
+  // Reject emails that are clearly not personal — e.g. all digits/generic patterns
+  // A personal email prefix should contain at least one letter that isn't part of
+  // a generic word, and should look like a name (letters, dots, hyphens, numbers)
+  if (!/^[a-z]/i.test(prefix)) return false
+
+  // Must be at least 3 characters
+  if (prefix.length < 3) return false
+
+  return true
+}
 
 export function extractEmails(text: string): string[] {
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
-  return [...new Set(text.match(emailRegex) || [])]
+  const allEmails = [...new Set(text.match(emailRegex) || [])]
+
+  // Filter to personal emails only
+  return allEmails.filter(email => isPersonalEmail(email))
 }
+
+// ─── Phone extraction ─────────────────────────────────────────────────────────
 
 export function extractPhones(text: string): string[] {
   const phoneRegexes = [
@@ -53,30 +143,81 @@ export function extractPhones(text: string): string[] {
   return [...new Set(phones)]
 }
 
+// ─── Contact name extraction ──────────────────────────────────────────────────
+/**
+ * Extracts a real person's name from a job description.
+ * Only returns something if it looks genuinely like "FirstName LastName"
+ * mentioned in a contact context (e.g. "contact John Smith", "email Sarah Jones at").
+ * Rejects sentence fragments, long phrases, and common non-name words.
+ */
+
+// Words that disqualify a "name" match — these appear in sentence fragments
+const NON_NAME_BLACKLIST = new Set([
+  'the', 'your', 'our', 'their', 'for', 'and', 'with', 'from', 'about',
+  'this', 'that', 'which', 'what', 'where', 'when', 'how', 'any', 'all',
+  'customer', 'feedback', 'territory', 'role', 'team', 'company', 'position',
+  'application', 'opportunity', 'business', 'sales', 'manager', 'director',
+  'please', 'directly', 'further', 'information', 'queries', 'questions',
+  'account', 'service', 'support', 'inquiries', 'enquiries',
+  'key', 'new', 'next', 'full', 'high', 'top', 'best', 'great', 'good',
+  'more', 'other', 'some', 'many', 'most', 'such', 'each', 'both',
+  'national', 'regional', 'local', 'global', 'senior', 'junior',
+  'human', 'people', 'talent', 'culture', 'resources', 'services',
+  'life', 'time', 'year', 'day', 'work', 'home', 'office',
+  'navigating', 'experiencing', 'seeking', 'looking', 'hiring',
+  'families', 'individuals', 'clients', 'candidates', 'applicants',
+])
+
 export function extractContactName(text: string): string | null {
+  // Strict patterns: only match when a person's name is clearly mentioned
+  // in a "contact this person" context
   const patterns = [
-    /Contact:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /Contact\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /Please\s+contact\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /Reach out to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /Email\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+at/i,
-    /speak (?:with|to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
-    /apply (?:to|through)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
+    // "contact John Smith on / at / via"
+    /\bcontact\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\s+(?:on|at|via|directly|for)/i,
+    // "please contact John Smith"
+    /\bplease\s+contact\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\b/i,
+    // "contact John Smith,"
+    /\bcontact\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\s*[,\.]/i,
+    // "email John Smith at"
+    /\bemail\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\s+at\b/i,
+    // "speak with John Smith" / "speak to John Smith"
+    /\bspeak\s+(?:with|to)\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\b/i,
+    // "reach out to John Smith"
+    /\breach\s+out\s+to\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\b/i,
+    // "questions, contact John Smith"
+    /\bquestions[,\.]?\s+(?:please\s+)?contact\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\b/i,
+    // "to John Smith, Brand & X Manager" — explicit name + job title
+    /\bto\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z\']{1,20}),\s+[A-Z][a-z]/i,
+    // "attn: John Smith" / "attention: John Smith"
+    /\battn:?\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\b/i,
+    // "call John Smith on"
+    /\bcall\s+([A-Z][a-z]{1,20}\s+[A-Z][a-z]{1,20})\s+on\b/i,
   ]
+
   for (const pattern of patterns) {
     const m = text.match(pattern)
-    if (m?.[1]) return m[1].trim()
+    if (m?.[1]) {
+      const name = m[1].trim()
+      const words = name.split(/\s+/)
+
+      // Must be exactly 2–3 words
+      if (words.length < 2 || words.length > 3) continue
+
+      // Every word must start with uppercase
+      if (!words.every(w => /^[A-Z]/.test(w))) continue
+
+      // No word can be a blacklisted non-name word
+      const lowerWords = words.map(w => w.toLowerCase())
+      if (lowerWords.some(w => NON_NAME_BLACKLIST.has(w))) continue
+
+      // Each word must look like a real name component (only letters, hyphens, apostrophes)
+      if (!words.every(w => /^[A-Za-z\-']{2,}$/.test(w))) continue
+
+      return name
+    }
   }
+
   return null
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function lc(s: string): string { return s.toLowerCase() }
-
-function findMatches(text: string, terms: string[]): string[] {
-  const t = lc(text)
-  return terms.filter(term => t.includes(lc(term)))
 }
 
 // ─── RecruiterProfile type (mirrors Apify output) ─────────────────────────────
@@ -110,11 +251,11 @@ function isRealValue(val: string | number | null | undefined): boolean {
 // ═══════════════════════════════════════════════════════════════════════════════
 /**
  * Apify populates recruiterProfile ONLY when a job is posted by a recruiter
- * on behalf of a client. Direct employer posts have recruiterProfile.name = "N/A".
+ * on behalf of a client. Direct employer posts have empty recruiterProfile.
  *
  * Fields checked (in priority order):
- *   name          → recruiter's personal name (Sally Falkinder)
- *   agencyName    → the agency company name (SF People)
+ *   name          → recruiter's personal name (e.g. Lewis Ball)
+ *   agencyName    → the agency company name (e.g. Fuse Recruitment)
  *   agencyWebsite → agency website
  *   specialisations → only agency recruiters have these
  *   placementCount  → only agency recruiters have placement counts
@@ -241,13 +382,21 @@ const KNOWN_AGENCIES: string[] = [
   'impact talent', 'impact recruitment',
   'core talent', 'cornerstone recruitment',
   'oxygen recruitment', 'red wolf group',
+  'fuse recruitment', 'fuse staffing', 'fuse talent',
+  'jora', 'seek talent', 'indeed hire',
 ]
 
-// Single words that as a WHOLE WORD in a company name = recruitment business
+/**
+ * Single words that as a WHOLE WORD in a company name = recruitment business.
+ * ⭐ v4: Added 'recruiters' (plural), 'recruits', 'placements' to catch
+ *        names like "ABC Recruiters", "XYZ Placements"
+ */
 const AGENCY_NAME_WORD_REGEX =
-  /\b(recruitment|recruiting|recruiter|recruiters|staffing|headhunter|headhunters|headhunting|resourcing|outsourcing|placements?)\b/i
+  /\b(recruitment|recruiting|recruiter|recruiters|recruits|staffing|headhunter|headhunters|headhunting|resourcing|outsourcing|placements?|manpower|labour\s*hire|labor\s*hire)\b/i
 
-// Multi-word phrases in a company name → agency signal
+/**
+ * Multi-word phrases in a company name → agency signal
+ */
 const AGENCY_NAME_PHRASES: string[] = [
   'recruitment agency', 'staffing agency', 'employment agency',
   'talent acquisition', 'recruitment firm', 'staffing firm',
@@ -261,7 +410,9 @@ const AGENCY_NAME_PHRASES: string[] = [
   'talent group', 'talent agency', 'search firm',
 ]
 
-// Phrases at the start of a job description that mean the poster is an agency
+/**
+ * Phrases at the start of a job description that mean the poster is an agency.
+ */
 const AGENCY_DESCRIPTION_SIGNALS: string[] = [
   'our client is seeking', 'our client requires', 'our client needs',
   'our client is looking for', 'our client has an exciting',
@@ -287,6 +438,15 @@ const AGENCY_DESCRIPTION_SIGNALS: string[] = [
   'working with our client base', 'registering for future roles',
   'submit your resume to our talent pool',
   'connect with our recruitment team',
+  // Additional agency signals
+  'we are partnering with', 'we partner with',
+  'join our talent community', 'talent community',
+  'for a confidential discussion', 'confidential discussion',
+  'if you would like a confidential', 'for a confidential chat',
+  '#choose fuse', '#scr-', // Seek recruiter hashtags
+  'refer them to us and we\'ll give you',
+  'we\'ll give you $',
+  'if you know someone looking for a job, refer',
 ]
 
 export function checkRecruitmentAgency(
@@ -297,7 +457,7 @@ export function checkRecruitmentAgency(
 ): FilterVerdict {
   const nameText = `${companyName} ${advertiserName}`
 
-  // 1. Known agencies list
+  // 1. Known agencies list (exact substring match)
   const knownMatch = KNOWN_AGENCIES.find(agency => lc(nameText).includes(lc(agency)))
   if (knownMatch) {
     return {
@@ -308,7 +468,7 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // 2. Single-word whole-word match in company name
+  // 2. Single-word whole-word match in COMPANY NAME
   if (AGENCY_NAME_WORD_REGEX.test(companyName)) {
     const match = companyName.match(AGENCY_NAME_WORD_REGEX)?.[0] || ''
     return {
@@ -319,7 +479,19 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // 3. Multi-word phrases in company name
+  // 2b. ⭐ v4: Also check advertiserName with the same word regex
+  // Catches cases where companyName is clean but advertiserName reveals it's an agency
+  if (AGENCY_NAME_WORD_REGEX.test(advertiserName)) {
+    const match = advertiserName.match(AGENCY_NAME_WORD_REGEX)?.[0] || ''
+    return {
+      shouldFilter: true,
+      reason: `Advertiser name contains recruitment keyword: "${match}" in "${advertiserName}"`,
+      confidence: 93,
+      category: 'recruitment_agency',
+    }
+  }
+
+  // 3. Multi-word phrases in company/advertiser name
   const nameSignals = findMatches(nameText, AGENCY_NAME_PHRASES)
   if (nameSignals.length >= 1) {
     return {
@@ -330,8 +502,8 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // 4. Agency phrases in description (first 500 chars)
-  const descSignals = findMatches(description.slice(0, 500), AGENCY_DESCRIPTION_SIGNALS)
+  // 4. Agency phrases in description (first 600 chars — slightly wider window)
+  const descSignals = findMatches(description.slice(0, 600), AGENCY_DESCRIPTION_SIGNALS)
   if (descSignals.length >= 2) {
     return {
       shouldFilter: true,
@@ -349,7 +521,18 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // 5. Recruitment website
+  // 5. ⭐ v4: Also scan the FULL description for the recruiter hashtag pattern
+  // Seek recruiter ads often end with "#SCR-firstname-lastname" or "#Choose AgencyName"
+  if (/#(?:SCR|scr)-[a-z]/.test(description) || /#[Cc]hoose\s+\w/.test(description)) {
+    return {
+      shouldFilter: true,
+      reason: 'Description contains Seek recruiter tracking hashtag',
+      confidence: 90,
+      category: 'recruitment_agency',
+    }
+  }
+
+  // 6. Recruitment website
   if (website && isRecruitmentWebsite(website)) {
     return {
       shouldFilter: true,
@@ -702,4 +885,3 @@ export type FilteredJobRecord = {
   confidence: number
   jobLink?: string
 }
-
