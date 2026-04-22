@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { runSeekScraper, waitForRun, fetchRunResults } from '@/services/apify'
 import {
-  extractEmails,
+  extractEmails,     // ← single source of truth for email filtering
   extractPhones,
   extractContactName,
   runAllFilters,
@@ -44,21 +44,30 @@ function sanitizeNumber(value: number | string | null | undefined): number | nul
 }
 
 // ─── Validate extracted contact name ──────────────────────────────────────────
-const NON_NAME_WORDS = [
+const NON_NAME_BLACKLIST = new Set([
   'the', 'your', 'our', 'their', 'for', 'and', 'with', 'from', 'about',
+  'this', 'that', 'which', 'what', 'where', 'when', 'how', 'any', 'all',
   'customer', 'feedback', 'territory', 'role', 'team', 'company', 'position',
   'application', 'opportunity', 'business', 'sales', 'manager', 'director',
   'please', 'directly', 'further', 'information', 'queries', 'questions',
-]
+  'account', 'service', 'support', 'inquiries', 'enquiries',
+  'key', 'new', 'next', 'full', 'high', 'top', 'best', 'great', 'good',
+  'more', 'other', 'some', 'many', 'most', 'such', 'each', 'both',
+  'national', 'regional', 'local', 'global', 'senior', 'junior',
+  'human', 'people', 'talent', 'culture', 'resources', 'services',
+  'life', 'time', 'year', 'day', 'work', 'home', 'office',
+  'navigating', 'experiencing', 'seeking', 'looking', 'hiring',
+  'families', 'individuals', 'clients', 'candidates', 'applicants',
+])
 
 function isValidContactName(name: string | null): string | null {
   if (!name) return null
   const words = name.trim().split(/\s+/)
-  if (words.length < 2 || words.length > 4) return null
-  if (!words.every(w => /^[A-Z]/.test(w))) return null
-  const lowerName = name.toLowerCase()
-  if (NON_NAME_WORDS.some(w => lowerName.includes(w))) return null
-  if (!words.every(w => /^[A-Za-z\-']+$/.test(w))) return null
+  if (words.length < 2 || words.length > 3) return null
+  if (!words.every((w) => /^[A-Z]/.test(w))) return null
+  const lowerWords = words.map((w) => w.toLowerCase())
+  if (lowerWords.some((w) => NON_NAME_BLACKLIST.has(w))) return null
+  if (!words.every((w) => /^[A-Za-z\-']{2,}$/.test(w))) return null
   return name
 }
 
@@ -109,7 +118,9 @@ export function useScraper() {
     const filteredRecords: FilteredJobRecord[] = []
 
     const counts: Record<string, number> = {}
-    const inc = (cat: string) => { counts[cat] = (counts[cat] || 0) + 1 }
+    const inc = (cat: string) => {
+      counts[cat] = (counts[cat] || 0) + 1
+    }
 
     for (const job of rawResults) {
       const companyName = job.advertiser?.name || job.companyName || 'Unknown Company'
@@ -130,7 +141,7 @@ export function useScraper() {
       const isVerified = job.advertiser?.isVerified || job.isVerified || false
       const companyLogo = sanitize(job.advertiser?.logo || null)
 
-      // ── FILTER — now includes recruiterProfile check ──────────────────────
+      // ── FILTER ────────────────────────────────────────────────────────────
       const { shouldFilter, verdict } = runAllFilters({
         companyName,
         advertiserName,
@@ -140,9 +151,6 @@ export function useScraper() {
         classification,
         isPrivate: job.advertiser?.isPrivate,
         filterSalesOnly: false, // Sales already filtered at Seek URL level
-        // ⭐ NEW: pass recruiter profile data from Apify
-        // If recruiterProfile.name is a real person name (not "N/A"), it means
-        // this job was posted by a recruiter on behalf of a client — filter it.
         recruiterProfile: job.recruiterProfile ?? null,
         recruiterSpecialisations: job.recruiterSpecialisations ?? null,
       })
@@ -160,21 +168,6 @@ export function useScraper() {
         })
         continue
       }
-
-      // ── Company website required ──────────────────────────────────────────
-      // if (!companyWebsite) {
-      //   console.log(`  ❌ [missing_website] ${companyName}: No company website`)
-      //   inc('missing_website')
-      //   filteredRecords.push({
-      //     companyName,
-      //     jobTitle,
-      //     reason: 'No company website found in listing',
-      //     category: 'missing_website',
-      //     confidence: 100,
-      //     jobLink,
-      //   })
-      //   continue
-      // }
 
       if (!companyName || companyName === 'Unknown Company') {
         inc('no_company_name')
@@ -206,19 +199,46 @@ export function useScraper() {
         fullLocation.split(',')[0] ||
         ''
 
-      // Merge emails/phones from Apify + description extraction
-      const apifyEmails = (job.emails || []).filter(e => e && e !== 'N/A')
-      const apifyPhones = (job.phoneNumbers || []).filter(p => p && p !== 'N/A')
+      // ── Email extraction ──────────────────────────────────────────────────
+      //
+      // FIX: Previously useScraper.ts had its OWN copy of isPersonalEmail /
+      // GENERIC_EMAIL_PREFIXES that could get out of sync with contactExtractor.ts.
+      // Now BOTH paths (Apify-provided emails AND description-extracted emails)
+      // use extractEmails() from contactExtractor.ts — single source of truth.
+      //
+      // extractEmails() already:
+      //   1. Runs a regex to find all email addresses in text
+      //   2. Filters out every generic/role email (careers@, hr@, info@, apply@, etc.)
+      //   3. Only returns personal emails (name-based prefixes like john@, sarah.jones@)
+      //
+      // For Apify-provided emails: we pass them as a fake "text" string so they
+      // go through the same isPersonalEmail filter used for extracted emails.
+      // This eliminates any possibility of the two copies diverging.
+
+      const apifyEmailsRaw = (job.emails || []).filter((e) => e && e !== 'N/A')
+      // Run Apify emails through extractEmails by joining them into a text blob.
+      // extractEmails will regex-match them back out and filter generics.
+      const apifyEmailsFiltered =
+        apifyEmailsRaw.length > 0
+          ? extractEmails(apifyEmailsRaw.join(' '))
+          : []
+
+      // Emails extracted from the job description text
       const descEmails = extractEmails(description)
+
+      // Merge and deduplicate — no generics in either list now
+      const emails = [...new Set([...apifyEmailsFiltered, ...descEmails])]
+
+      // ── Phone extraction ──────────────────────────────────────────────────
+      const apifyPhones = (job.phoneNumbers || []).filter((p) => p && p !== 'N/A')
       const descPhones = extractPhones(description)
-      const emails = [...new Set([...apifyEmails, ...descEmails])]
       const phones = [...new Set([...apifyPhones, ...descPhones])]
 
-      // Validate contact name — reject garbage sentence fragments
+      // ── Contact name ──────────────────────────────────────────────────────
       const rawContactName = extractContactName(description)
       const contactName = isValidContactName(rawContactName)
 
-      // Format date
+      // ── Date formatting ───────────────────────────────────────────────────
       let formattedDate = 'Recently posted'
       const datePostedRaw = job.listedAt || ''
       if (datePostedRaw) {
@@ -231,12 +251,13 @@ export function useScraper() {
               year: 'numeric',
             })
           }
-        } catch {}
+        } catch {
+          // keep default
+        }
       }
 
       const salary = sanitize(job.salary || null)
 
-      // workTypes can be string or array depending on Apify version
       let workType: string | null = null
       if (Array.isArray(job.workTypes)) {
         workType = sanitize(job.workTypes[0])
@@ -309,11 +330,12 @@ export function useScraper() {
     console.log(`  ✅ Passed: ${jobsMap.size}`)
     Object.entries(counts).forEach(([cat, n]) => console.log(`  🚫 ${cat}: ${n}`))
 
-    // Log each filter category for user visibility
     if (counts['recruiter_profile'])
-      addLog(`👤 Filtered ${counts['recruiter_profile']} recruiter-posted jobs (Sally Falkinder style)`)
+      addLog(`👤 Filtered ${counts['recruiter_profile']} recruiter-posted jobs`)
     if (counts['recruitment_agency'] || counts['recruitment_website'])
-      addLog(`🚫 Filtered ${(counts['recruitment_agency'] || 0) + (counts['recruitment_website'] || 0)} recruitment agencies`)
+      addLog(
+        `🚫 Filtered ${(counts['recruitment_agency'] || 0) + (counts['recruitment_website'] || 0)} recruitment agencies`
+      )
     if (counts['no_agency_disclaimer'])
       addLog(`📝 Filtered ${counts['no_agency_disclaimer']} jobs with "no agencies" disclaimer`)
     if (counts['hr_consulting'])
@@ -322,8 +344,6 @@ export function useScraper() {
       addLog(`⚖️ Filtered ${counts['law_firm']} law/legal firms`)
     if (counts['private_advertiser'])
       addLog(`🏢 Filtered ${counts['private_advertiser']} private advertisers`)
-    if (counts['missing_website'])
-      addLog(`⚠️ Filtered ${counts['missing_website']} jobs with no company website`)
 
     return { passed: Array.from(jobsMap.values()), filteredRecords }
   }
@@ -351,13 +371,21 @@ export function useScraper() {
         setCurrentOffset(0)
         setHasMore(false)
         setScraperStep('building_query')
-        setMetrics({ totalRaw: 0, validLeads: 0, filteredOut: 0, stepStartedAt: Date.now(), elapsedSeconds: 0 })
+        setMetrics({
+          totalRaw: 0,
+          validLeads: 0,
+          filteredOut: 0,
+          stepStartedAt: Date.now(),
+          elapsedSeconds: 0,
+        })
       } else {
         setIsLoadingMore(true)
       }
 
       if (!isLoadMore) {
-        addLog(`🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`)
+        addLog(
+          `🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`
+        )
         addLog(`📍 Location: ${city === 'Australia' ? 'All Australia' : city}`)
         addLog(`📊 Requesting up to ${maxResults} results per job title`)
         addLog(`🎯 Sales classification filter: Applied at Seek URL level`)
@@ -474,7 +502,9 @@ export function useScraper() {
           setJobs((prev) => [...prev, ...newJobs])
           setHasMore(processedJobs.length >= maxResults * jobTitles.length)
           setCurrentOffset(offset + maxResults)
-          addLog(`✨ Loaded ${newJobs.length} more (Total: ${jobs.length + newJobs.length})`)
+          addLog(
+            `✨ Loaded ${newJobs.length} more (Total: ${jobs.length + newJobs.length})`
+          )
           setScraperStep('done')
         }
       } catch (err) {
@@ -490,7 +520,9 @@ export function useScraper() {
               error_message: message,
               completed_at: new Date().toISOString(),
             })
-          } catch {}
+          } catch {
+            // ignore history update failure
+          }
         }
       } finally {
         if (!isLoadMore) setIsLoading(false)
@@ -509,7 +541,16 @@ export function useScraper() {
       minAgeDays: number = 0,
       salesOnlyFilter: boolean = true
     ) => {
-      await performSearch(jobTitles, city, maxResults, skipPages, minAgeDays, salesOnlyFilter, 0, false)
+      await performSearch(
+        jobTitles,
+        city,
+        maxResults,
+        skipPages,
+        minAgeDays,
+        salesOnlyFilter,
+        0,
+        false
+      )
     },
     [performSearch]
   )
@@ -539,7 +580,13 @@ export function useScraper() {
     setCurrentOffset(0)
     setLastSearchParams(null)
     setScraperStep('idle')
-    setMetrics({ totalRaw: 0, validLeads: 0, filteredOut: 0, stepStartedAt: null, elapsedSeconds: 0 })
+    setMetrics({
+      totalRaw: 0,
+      validLeads: 0,
+      filteredOut: 0,
+      stepStartedAt: null,
+      elapsedSeconds: 0,
+    })
   }, [])
 
   const toggleSalesOnly = useCallback((value: boolean) => {
