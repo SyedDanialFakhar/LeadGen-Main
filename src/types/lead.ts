@@ -160,5 +160,5 @@ export interface LeadStats {
   awaitingEnrichment: number
   followUpNeeded: number
   converted: number
-  called: number
+  closed: number
 }
