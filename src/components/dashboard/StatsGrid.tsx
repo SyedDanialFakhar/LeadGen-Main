@@ -1,12 +1,5 @@
 // src/components/dashboard/StatsGrid.tsx
-import {
-  Users,
-  UserPlus,
-  Sparkles,
-  Bell,
-  TrendingUp,
-  XCircle,
-} from 'lucide-react'
+import { Users, UserPlus, Sparkles, Bell, TrendingUp, XCircle } from 'lucide-react'
 import { StatCard } from '@/components/ui/StatCard'
 import type { LeadStats } from '@/types'
 
@@ -51,9 +44,9 @@ export function StatsGrid({ stats, isLoading, onCardClick }: StatsGridProps) {
         isLoading={isLoading}
         onClick={() => onCardClick?.('followup')}
       />
-      {/* 
-        Converted = leads that replied with meeting interest / booked a call
-        These have status = 'converted' in the database
+      {/*
+        Converted = response === 'positive'
+        Lead replied with meeting interest / booked a call
       */}
       <StatCard
         title="Converted"
@@ -63,10 +56,9 @@ export function StatsGrid({ stats, isLoading, onCardClick }: StatsGridProps) {
         isLoading={isLoading}
         onClick={() => onCardClick?.('converted')}
       />
-      {/* 
-        Closed = leads whose sequence ended without conversion —
-        either we stopped outreach or client declined/didn't respond
-        These have status = 'closed' in the database (renamed from 'called')
+      {/*
+        Closed = response === 'negative'
+        Sequence ended without a win — declined, unsubscribed, no engagement
       */}
       <StatCard
         title="Closed"

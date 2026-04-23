@@ -53,14 +53,11 @@ export function QuickActions() {
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-      {/* Header */}
       <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
         <h3 className="font-semibold text-slate-900 dark:text-white text-base tracking-tight">
           Quick Actions
         </h3>
       </div>
-
-      {/* Actions list */}
       <div className="p-3 flex flex-col gap-1">
         {actions.map((action) => (
           <button
@@ -69,51 +66,26 @@ export function QuickActions() {
             className={`
               w-full flex items-center gap-3.5 px-3 py-3 rounded-xl text-left
               transition-all duration-150 group
-              ${
-                action.highlight
-                  ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-blue-200 dark:ring-blue-800'
-                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+              ${action.highlight
+                ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-blue-200 dark:ring-blue-800'
+                : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
               }
             `}
           >
-            {/* Icon */}
-            <div
-              className={`
-                w-8 h-8 rounded-lg flex items-center justify-center shrink-0
-                ${action.iconBg} ${action.iconColor}
-                group-hover:scale-105 transition-transform duration-150
-              `}
-            >
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${action.iconBg} ${action.iconColor} group-hover:scale-105 transition-transform duration-150`}>
               {action.icon}
             </div>
-
-            {/* Text */}
             <div className="flex-1 min-w-0">
-              <p
-                className={`text-sm font-semibold leading-tight ${
-                  action.highlight
-                    ? 'text-blue-700 dark:text-blue-300'
-                    : 'text-slate-800 dark:text-slate-100'
-                }`}
-              >
+              <p className={`text-sm font-semibold leading-tight ${action.highlight ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-100'}`}>
                 {action.label}
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">
                 {action.description}
               </p>
             </div>
-
-            {/* Arrow */}
             <svg
-              className={`w-4 h-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 ${
-                action.highlight
-                  ? 'text-blue-400 dark:text-blue-500'
-                  : 'text-slate-300 dark:text-slate-600'
-              }`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+              className={`w-4 h-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 ${action.highlight ? 'text-blue-400 dark:text-blue-500' : 'text-slate-300 dark:text-slate-600'}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>

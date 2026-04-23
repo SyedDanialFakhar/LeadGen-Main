@@ -12,22 +12,34 @@ export function DashboardPage() {
   const { leads, isLoading, stats, statsLoading } = useLeads()
 
   const handleCardClick = (filter: string) => {
-    if (filter === 'enrichment') {
-      navigate('/enrichment')
-    } else if (filter === 'followup') {
-      navigate('/emails')
-    } else if (filter === 'closed') {
-      navigate('/leads?status=closed')
-    } else if (filter === 'converted') {
-      navigate('/leads?status=converted')
-    } else {
-      navigate('/leads')
+    switch (filter) {
+      case 'enrichment':
+        navigate('/enrichment')
+        break
+      case 'followup':
+        // response is null / 'none' / '' — no reply yet
+        navigate('/leads?response=none')
+        break
+      case 'converted':
+        // response === 'positive'
+        navigate('/leads?response=positive')
+        break
+      case 'closed':
+        // response === 'negative'
+        navigate('/leads?response=negative')
+        break
+      default:
+        navigate('/leads')
     }
   }
 
-  const now = new Date()
-  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening'
-  const dateStr = now.toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' })
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const dateStr = new Date().toLocaleDateString('en-AU', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -66,12 +78,9 @@ export function DashboardPage() {
 
         {/* Main content grid */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Recent leads — takes 2 cols */}
           <div className="xl:col-span-2">
             <RecentLeadsTable leads={leads} isLoading={isLoading} />
           </div>
-
-          {/* Right sidebar */}
           <div className="flex flex-col gap-5">
             <QuickActions />
             <ApiStatusCard />
