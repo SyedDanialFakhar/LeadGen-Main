@@ -7,8 +7,6 @@ import {
   type ContactFinderPhase,
 } from '@/services/contactFinderService'
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
 export interface LeadFinderEntry {
   lead: Lead
   result: ContactFinderResult
@@ -17,125 +15,99 @@ export interface LeadFinderEntry {
 export interface ContactFinderState {
   entries: LeadFinderEntry[]
   activeIndex: number
-  activePhase: ContactFinderPhase
   isRunning: boolean
   isDone: boolean
+  totalCreditsUsed: number
 }
-
-// ─── Initial result factory ───────────────────────────────────────────────────
 
 function makeInitialResult(lead: Lead): ContactFinderResult {
   return {
     leadId: lead.id,
     companyName: lead.companyName,
     phase: 'idle',
+    apolloOrgId: null,
     employeeCount: null,
     companyLinkedinUrl: lead.companyLinkedinUrl ?? null,
     companyWebsite: lead.companyWebsite ?? null,
     companyDomain: null,
+    industry: null,
     contactName: null,
     contactTitle: null,
     contactLinkedinUrl: null,
     contactEmail: null,
+    emailStatus: null,
     skipReason: null,
     error: null,
     emailSource: null,
+    creditsUsed: 0,
   }
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useContactFinder() {
   const [state, setState] = useState<ContactFinderState>({
     entries: [],
     activeIndex: -1,
-    activePhase: 'idle',
     isRunning: false,
     isDone: false,
+    totalCreditsUsed: 0,
   })
 
-  // Use a ref so the abort flag doesn't cause re-renders
   const abortRef = useRef(false)
 
   const runForLeads = useCallback(async (leads: Lead[]) => {
     if (!leads.length) return
     abortRef.current = false
 
-    // Set up initial state with placeholder results
     setState({
-      entries: leads.map(lead => ({
-        lead,
-        result: makeInitialResult(lead),
-      })),
+      entries: leads.map(lead => ({ lead, result: makeInitialResult(lead) })),
       activeIndex: 0,
-      activePhase: 'idle',
       isRunning: true,
       isDone: false,
+      totalCreditsUsed: 0,
     })
+
+    let totalCredits = 0
 
     for (let i = 0; i < leads.length; i++) {
       if (abortRef.current) break
 
       const lead = leads[i]
 
-      const finalResult = await findContactForLead(
-        lead,
-        (phase, partial) => {
-          if (abortRef.current) return
-          setState(prev => {
-            const updated = [...prev.entries]
-            updated[i] = {
-              ...updated[i],
-              result: { ...updated[i].result, ...partial, phase },
-            }
-            return {
-              ...prev,
-              entries: updated,
-              activeIndex: i,
-              activePhase: phase,
-            }
-          })
-        }
-      )
+      const finalResult = await findContactForLead(lead, (phase, partial) => {
+        if (abortRef.current) return
+        setState(prev => {
+          const updated = [...prev.entries]
+          updated[i] = { ...updated[i], result: { ...updated[i].result, ...partial, phase } }
+          return { ...prev, entries: updated, activeIndex: i }
+        })
+      })
 
       if (abortRef.current) break
 
-      // Commit the final result for this lead
+      totalCredits += finalResult.creditsUsed
+
       setState(prev => {
         const updated = [...prev.entries]
         updated[i] = { ...updated[i], result: finalResult }
-        return { ...prev, entries: updated }
+        return { ...prev, entries: updated, totalCreditsUsed: totalCredits }
       })
 
-      // Respect Apollo / Hunter rate limits between leads
-      if (i < leads.length - 1) {
-        await new Promise(r => setTimeout(r, 700))
-      }
+      // Throttle between leads to respect Apollo rate limits
+      if (i < leads.length - 1) await new Promise(r => setTimeout(r, 800))
     }
 
     setState(prev => ({
       ...prev,
       isRunning: false,
       isDone: true,
-      activePhase: 'done',
     }))
   }, [])
 
-  /** Stop after the current lead finishes */
-  const stop = useCallback(() => {
-    abortRef.current = true
-  }, [])
+  const stop = useCallback(() => { abortRef.current = true }, [])
 
-  /** Reset everything back to empty state */
   const reset = useCallback(() => {
     abortRef.current = false
-    setState({
-      entries: [],
-      activeIndex: -1,
-      activePhase: 'idle',
-      isRunning: false,
-      isDone: false,
-    })
+    setState({ entries: [], activeIndex: -1, isRunning: false, isDone: false, totalCreditsUsed: 0 })
   }, [])
 
   return { ...state, runForLeads, stop, reset }
