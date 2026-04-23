@@ -1,7 +1,6 @@
 // src/pages/DashboardPage.tsx
 import { useNavigate } from 'react-router-dom'
 import { TopNav } from '@/components/layout/TopNav'
-import { PageHeader } from '@/components/layout/PageHeader'
 import { StatsGrid } from '@/components/dashboard/StatsGrid'
 import { RecentLeadsTable } from '@/components/dashboard/RecentLeadsTable'
 import { QuickActions } from '@/components/dashboard/QuickActions'
@@ -17,22 +16,46 @@ export function DashboardPage() {
       navigate('/enrichment')
     } else if (filter === 'followup') {
       navigate('/emails')
+    } else if (filter === 'closed') {
+      navigate('/leads?status=closed')
+    } else if (filter === 'converted') {
+      navigate('/leads?status=converted')
     } else {
       navigate('/leads')
     }
   }
 
+  const now = new Date()
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening'
+  const dateStr = now.toLocaleDateString('en-AU', { weekday: 'long', month: 'long', day: 'numeric' })
+
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopNav
         title="Dashboard"
         subtitle="Welcome back — here's your lead gen overview"
       />
-      <div className="flex-1 p-6 flex flex-col gap-6">
-        <PageHeader
-          title="Overview"
-          description="Real-time snapshot of your lead generation pipeline"
-        />
+
+      <div className="flex-1 px-6 py-8 flex flex-col gap-8 max-w-[1600px] mx-auto w-full">
+
+        {/* Page header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">
+              {dateStr}
+            </p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+              {greeting} 👋
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Here's what's happening with your pipeline today.
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Live</span>
+          </div>
+        </div>
 
         {/* Stats */}
         <StatsGrid
@@ -42,18 +65,19 @@ export function DashboardPage() {
         />
 
         {/* Main content grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Recent leads — takes 2 cols */}
-          <div className="lg:col-span-2">
+          <div className="xl:col-span-2">
             <RecentLeadsTable leads={leads} isLoading={isLoading} />
           </div>
 
           {/* Right sidebar */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             <QuickActions />
             <ApiStatusCard />
           </div>
         </div>
+
       </div>
     </div>
   )
