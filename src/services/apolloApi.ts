@@ -1,65 +1,197 @@
 // src/services/apolloApi.ts
-// Apollo.io — free tier: 50 export credits/month, unlimited people search
+/**
+ * APOLLO.IO API — Verified against official docs, April 2026
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Correct base URL: https://api.apollo.io/api/v1  ← /api/v1 NOT /v1
+ *
+ * Endpoint costs:
+ *   GET  /organizations/enrich?domain=   → costs credits, returns LinkedIn employee count
+ *   POST /mixed_companies/search         → costs credits, use only if no domain
+ *   POST /mixed_people/api_search        → FREE, no credits, no emails returned
+ *   POST /people/match?id=               → costs 1 credit, reveals email
+ *
+ * Key param names (official):
+ *   q_organization_domains_list          ← array, no www/@
+ *   organization_ids                     ← array of Apollo org IDs
+ *   person_titles                        ← array
+ *   organization_locations               ← array  e.g. ["Australia"]
+ *   organization_num_employees_ranges    ← array  e.g. ["1,500"]
+ *   include_similar_titles               ← boolean
+ *   person_seniorities                   ← array e.g. ["c_suite","director","manager"]
+ */
 
-import type { ApolloContact, ApolloEnrichedContact } from '@/types'
 import { getApolloApiKey } from './settingsService'
 
-const APOLLO_BASE = 'https://api.apollo.io/v1'
+const APOLLO_BASE = 'https://api.apollo.io/api/v1'
 
-// ─── New Types ─────────────────────────────────────────────────────────────────
+// ─── Shared fetch wrapper ──────────────────────────────────────────────────────
 
-export interface ApolloOrganization {
+async function apolloFetch(path: string, init: RequestInit): Promise<Response> {
+  const apiKey = await getApolloApiKey()
+  if (!apiKey) throw new Error('Apollo API key not configured — add it in Settings.')
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    accept: 'application/json',
+    'x-api-key': apiKey,
+    ...(init.headers as Record<string, string> | undefined),
+  }
+
+  const res = await fetch(`${APOLLO_BASE}${path}`, { ...init, headers })
+
+  if (!res.ok) {
+    if (res.status === 401)
+      throw new Error('Invalid Apollo API key — check your Settings.')
+    if (res.status === 403)
+      throw new Error('Apollo API key lacks permission for this endpoint (may need a master API key).')
+    if (res.status === 422) {
+      let msg = 'Apollo validation error'
+      try { msg = (await res.json()).message ?? msg } catch {}
+      throw new Error(msg)
+    }
+    if (res.status === 429)
+      throw new Error('Apollo rate limit reached — please wait a moment and try again.')
+    throw new Error(`Apollo error ${res.status}: ${res.statusText}`)
+  }
+
+  return res
+}
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+export interface ApolloOrg {
   id: string
   name: string
   websiteUrl: string | null
   linkedinUrl: string | null
+  /** Comes from LinkedIn data — this is the real verified employee count */
   estimatedNumEmployees: number | null
   industry: string | null
   city: string | null
   country: string | null
-  phone: string | null
   domain: string | null
 }
 
-// ─── Organization Search ───────────────────────────────────────────────────────
-// Finds a company on Apollo — returns employee count, LinkedIn URL, domain
-// Does NOT use export credits
+export interface ApolloPerson {
+  id: string
+  name: string
+  firstName: string
+  lastName: string
+  title: string
+  linkedinUrl: string | null
+  /** Always null from /mixed_people/api_search — only set after enrichment */
+  email: string | null
+  emailStatus: string | null
+  orgName: string | null
+}
 
-export async function searchOrganization(
+// Backwards-compat types for existing useEnrichment.ts
+export interface ApolloContact {
+  id: string
+  firstName: string
+  lastName: string
+  name: string
+  title: string
+  email: string | null
+  phone: string | null
+  linkedinUrl: string | null
+  organization: {
+    id: string
+    name: string
+    websiteUrl: string | null
+    linkedinUrl: string | null
+    estimatedNumEmployees: number | null
+  } | null
+}
+
+export interface ApolloEnrichedContact {
+  id: string
+  firstName: string
+  lastName: string
+  name: string
+  title: string
+  email: string | null
+  phone: string | null
+  linkedinUrl: string | null
+  emailStatus: string | null
+  city: string | null
+  country: string | null
+  organization: {
+    id: string
+    name: string
+    websiteUrl: string | null
+    linkedinUrl: string | null
+    estimatedNumEmployees: number | null
+  } | null
+}
+
+// ─── 1. Organization Enrichment by domain ─────────────────────────────────────
+// Best for getting REAL employee count (sourced from LinkedIn).
+// Costs credits. Always try this before name-based search.
+
+export async function enrichOrganizationByDomain(
+  domain: string,
+): Promise<ApolloOrg | null> {
+  const clean = domain
+    .replace(/^https?:\/\/(www\.)?/, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase()
+    .trim()
+
+  if (!clean) return null
+
+  try {
+    const res = await apolloFetch(
+      `/organizations/enrich?domain=${encodeURIComponent(clean)}`,
+      { method: 'GET' },
+    )
+    const data = await res.json()
+    const o = data.organization
+    if (!o) return null
+
+    return {
+      id: o.id ?? '',
+      name: o.name ?? '',
+      websiteUrl: o.website_url ?? null,
+      linkedinUrl: o.linkedin_url ?? null,
+      estimatedNumEmployees: o.estimated_num_employees ?? null,
+      industry: o.industry ?? null,
+      city: o.city ?? null,
+      country: o.country ?? null,
+      domain: o.primary_domain ?? o.domain ?? clean,
+    }
+  } catch (err) {
+    // 422 = domain not found, not a real error
+    if (err instanceof Error && err.message.includes('422')) return null
+    if (err instanceof Error && err.message.includes('validation')) return null
+    throw err
+  }
+}
+
+// ─── 2. Organization Search by company name ────────────────────────────────────
+// Costs credits. Only use when we have no domain to try.
+
+export async function searchOrganizationByName(
   companyName: string,
-  domain?: string | null
-): Promise<ApolloOrganization | null> {
-  const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured. Please add it in Settings.')
-
+  city?: string | null,
+): Promise<ApolloOrg | null> {
   const body: Record<string, unknown> = {
     q_organization_name: companyName,
+    organization_locations: ['Australia'],
     per_page: 5,
     page: 1,
-    organization_locations: ['Australia'],
   }
-  if (domain) body.q_organization_domains = [domain]
 
-  const response = await fetch(`${APOLLO_BASE}/mixed_companies/search`, {
+  const res = await apolloFetch('/mixed_companies/search', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
-    },
     body: JSON.stringify(body),
   })
 
-  if (!response.ok) {
-    if (response.status === 429) throw new Error('Apollo rate limit reached — try again in a moment')
-    if (response.status === 401) throw new Error('Invalid Apollo API key — check your Settings')
-    throw new Error(`Apollo organization search failed: ${response.statusText}`)
-  }
-
-  const data = await response.json()
+  const data = await res.json()
   const orgs: any[] = data.organizations ?? []
   if (!orgs.length) return null
 
-  // Pick best match: prefer ones with a name that contains first word of query
+  // Best-match: name contains first word of query
   const firstWord = companyName.toLowerCase().split(' ')[0]
   const best =
     orgs.find(o => o.name?.toLowerCase().includes(firstWord)) ?? orgs[0]
@@ -73,102 +205,136 @@ export async function searchOrganization(
     industry: best.industry ?? null,
     city: best.city ?? null,
     country: best.country ?? null,
-    phone: best.sanitized_phone ?? best.phone ?? null,
     domain: best.primary_domain ?? null,
   }
 }
 
-// ─── People Search by Titles ───────────────────────────────────────────────────
-// Searches for people with specific titles at a company.
-// Does NOT use export credits — emails may or may not be pre-populated.
+// ─── 3. People API Search (FREE — zero credits) ───────────────────────────────
+// Returns person IDs and job titles. Does NOT return emails ever.
+// Must pass results to enrichPersonById() to get the email.
 
 export async function searchPeopleByTitles(params: {
   companyName: string
+  domain?: string | null
   organizationId?: string | null
   titles: string[]
-  domain?: string | null
-}): Promise<ApolloContact[]> {
-  const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured. Please add it in Settings.')
-
+  seniorities?: string[]
+}): Promise<ApolloPerson[]> {
   const body: Record<string, unknown> = {
-    q_organization_name: params.companyName,
     person_titles: params.titles,
+    organization_locations: ['Australia'],
     per_page: 10,
     page: 1,
+    include_similar_titles: true,
   }
 
-  if (params.organizationId) body.organization_ids = [params.organizationId]
-  if (params.domain) body.q_organization_domains = [params.domain]
+  // Domain is most reliable — takes precedence over org ID
+  if (params.domain) {
+    body.q_organization_domains_list = [params.domain]
+  } else if (params.organizationId) {
+    body.organization_ids = [params.organizationId]
+  } else {
+    // Last resort: name search (less accurate)
+    body.q_organization_name = params.companyName
+  }
 
-  const response = await fetch(`${APOLLO_BASE}/mixed_people/search`, {
+  if (params.seniorities?.length) {
+    body.person_seniorities = params.seniorities
+  }
+
+  const res = await apolloFetch('/mixed_people/api_search', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
-    },
     body: JSON.stringify(body),
   })
 
-  if (!response.ok) {
-    if (response.status === 429) throw new Error('Apollo rate limit reached — try again in a moment')
-    throw new Error(`Apollo people search failed: ${response.statusText}`)
-  }
-
-  const data = await response.json()
+  const data = await res.json()
   const people: any[] = data.people ?? []
 
   return people.map(p => ({
     id: p.id as string,
-    firstName: p.first_name as string,
-    lastName: p.last_name as string,
-    name: p.name as string,
-    title: p.title as string,
-    // Apollo returns emails in search results on free tier for verified contacts
-    email: (p.email as string) ?? null,
-    // Phone NOT available on free tier
-    phone: null,
+    name: (p.name as string) ?? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
+    firstName: (p.first_name as string) ?? '',
+    lastName: (p.last_name as string) ?? '',
+    title: (p.title as string) ?? '',
     linkedinUrl: (p.linkedin_url as string) ?? null,
-    organization: p.organization
-      ? {
-          id: (p.organization as any).id,
-          name: (p.organization as any).name,
-          websiteUrl: (p.organization as any).website_url ?? null,
-          linkedinUrl: (p.organization as any).linkedin_url ?? null,
-          estimatedNumEmployees:
-            (p.organization as any).estimated_num_employees ?? null,
-        }
-      : null,
+    email: null,        // Never returned by this endpoint
+    emailStatus: null,
+    orgName: (p.organization?.name as string) ?? params.companyName,
   }))
 }
 
-// ─── Email Reveal ──────────────────────────────────────────────────────────────
-// Reveals the email for a specific person by Apollo ID.
-// ⚠️ Uses 1 export credit per successful reveal (50/month on free tier)
+// ─── 4. People Enrichment by Apollo ID (costs 1 credit) ──────────────────────
+// This is the CORRECT way to get an email.
+// Pass the `id` from searchPeopleByTitles.
 
-export async function revealPersonEmail(personId: string): Promise<string | null> {
-  const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured')
+export async function enrichPersonById(personId: string): Promise<{
+  email: string | null
+  emailStatus: string | null
+  linkedinUrl: string | null
+  name: string | null
+  title: string | null
+} | null> {
+  try {
+    const res = await apolloFetch('/people/match', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: personId,
+        reveal_personal_emails: false,  // true = personal email like gmail (more credits)
+        reveal_phone_number: false,
+      }),
+    })
 
-  const response = await fetch(`${APOLLO_BASE}/people/match`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
-    },
-    body: JSON.stringify({
-      id: personId,
-      reveal_personal_emails: false, // true would use extra credits
-    }),
-  })
+    const data = await res.json()
+    const p = data.person
+    if (!p) return null
 
-  if (!response.ok) return null
-
-  const data = await response.json()
-  return (data.person?.email as string) ?? null
+    return {
+      email: (p.email as string) ?? null,
+      emailStatus: (p.email_status as string) ?? null,
+      linkedinUrl: (p.linkedin_url as string) ?? null,
+      name: (p.name as string) ?? null,
+      title: (p.title as string) ?? null,
+    }
+  } catch {
+    return null  // Soft fail — proceed to Hunter
+  }
 }
 
-// ─── Existing functions (preserved) ───────────────────────────────────────────
+// ─── 5. People match by name + domain (costs 1 credit, no ID needed) ──────────
+// Useful when we have a name from Hunter and want Apollo enrichment.
+
+export async function enrichPersonByNameAndDomain(params: {
+  firstName: string
+  lastName: string
+  domain: string
+}): Promise<{ email: string | null; emailStatus: string | null } | null> {
+  try {
+    const qs = new URLSearchParams({
+      first_name: params.firstName,
+      last_name: params.lastName,
+      domain: params.domain,
+      reveal_personal_emails: 'false',
+      reveal_phone_number: 'false',
+    })
+    const res = await apolloFetch(`/people/match?${qs}`, {
+      method: 'POST',
+      body: '{}',
+    })
+
+    const data = await res.json()
+    const p = data.person
+    if (!p) return null
+
+    return {
+      email: (p.email as string) ?? null,
+      emailStatus: (p.email_status as string) ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ─── Legacy shims (used by existing useEnrichment hook) ───────────────────────
 
 export async function searchPeople(query: {
   name?: string
@@ -176,104 +342,81 @@ export async function searchPeople(query: {
   title?: string
   location?: string
 }): Promise<ApolloContact[]> {
-  const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured. Please add it in Settings.')
+  const body: Record<string, unknown> = { per_page: 5, page: 1 }
+  if (query.company) body.q_organization_name = query.company
+  if (query.name) body.q_keywords = query.name
+  if (query.title) body.person_titles = [query.title]
+  if (query.location) body.organization_locations = [query.location]
 
-  const response = await fetch(`${APOLLO_BASE}/mixed_people/search`, {
+  const res = await apolloFetch('/mixed_people/api_search', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
-    },
-    body: JSON.stringify({
-      q_organization_name: query.company,
-      q_keywords: query.name,
-      person_titles: query.title ? [query.title] : undefined,
-      person_locations: query.location ? [query.location] : undefined,
-      page: 1,
-      per_page: 5,
-    }),
+    body: JSON.stringify(body),
   })
 
-  if (!response.ok) {
-    if (response.status === 429) throw new Error('Apollo rate limit reached')
-    throw new Error(`Apollo API error: ${response.statusText}`)
-  }
+  const data = await res.json()
+  const people: any[] = data.people ?? []
 
-  const data = await response.json()
-  const people = data.people ?? []
-
-  return people.map((p: Record<string, unknown>) => ({
-    id: p.id as string,
-    firstName: p.first_name as string,
-    lastName: p.last_name as string,
-    name: p.name as string,
-    title: p.title as string,
-    email: (p.email as string) ?? null,
-    phone:
-      (p.phone_numbers as Array<{ sanitized_number: string }>)?.[0]
-        ?.sanitized_number ?? null,
-    linkedinUrl: (p.linkedin_url as string) ?? null,
-    organization: p.organization
-      ? {
-          id: (p.organization as Record<string, unknown>).id as string,
-          name: (p.organization as Record<string, unknown>).name as string,
-          websiteUrl:
-            ((p.organization as Record<string, unknown>).website_url as string) ??
-            null,
-          linkedinUrl:
-            ((p.organization as Record<string, unknown>).linkedin_url as string) ??
-            null,
-          estimatedNumEmployees:
-            ((p.organization as Record<string, unknown>)
-              .estimated_num_employees as number) ?? null,
-        }
-      : null,
-  }))
-}
-
-export async function enrichPerson(
-  email: string
-): Promise<ApolloEnrichedContact | null> {
-  const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured')
-
-  const response = await fetch(`${APOLLO_BASE}/people/match`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
-    },
-    body: JSON.stringify({ email }),
-  })
-
-  if (!response.ok) return null
-
-  const data = await response.json()
-  const p = data.person
-  if (!p) return null
-
-  return {
+  return people.map(p => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
-    name: p.name,
+    name: p.name ?? `${p.first_name} ${p.last_name}`,
     title: p.title,
-    email: p.email ?? null,
-    phone: p.phone_numbers?.[0]?.sanitized_number ?? null,
+    email: null,    // Not returned by this endpoint
+    phone: null,
     linkedinUrl: p.linkedin_url ?? null,
-    emailStatus: p.email_status ?? null,
-    city: p.city ?? null,
-    country: p.country ?? null,
     organization: p.organization
       ? {
           id: p.organization.id,
           name: p.organization.name,
           websiteUrl: p.organization.website_url ?? null,
           linkedinUrl: p.organization.linkedin_url ?? null,
-          estimatedNumEmployees:
-            p.organization.estimated_num_employees ?? null,
+          estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
         }
       : null,
+  }))
+}
+
+export async function enrichPerson(
+  email: string,
+): Promise<ApolloEnrichedContact | null> {
+  try {
+    const qs = new URLSearchParams({
+      email,
+      reveal_personal_emails: 'false',
+      reveal_phone_number: 'false',
+    })
+    const res = await apolloFetch(`/people/match?${qs}`, {
+      method: 'POST',
+      body: '{}',
+    })
+    const data = await res.json()
+    const p = data.person
+    if (!p) return null
+
+    return {
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      name: p.name,
+      title: p.title,
+      email: p.email ?? null,
+      phone: null,
+      linkedinUrl: p.linkedin_url ?? null,
+      emailStatus: p.email_status ?? null,
+      city: p.city ?? null,
+      country: p.country ?? null,
+      organization: p.organization
+        ? {
+            id: p.organization.id,
+            name: p.organization.name,
+            websiteUrl: p.organization.website_url ?? null,
+            linkedinUrl: p.organization.linkedin_url ?? null,
+            estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
+          }
+        : null,
+    }
+  } catch {
+    return null
   }
 }
