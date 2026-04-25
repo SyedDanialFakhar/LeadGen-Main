@@ -1,6 +1,6 @@
 // src/pages/EnrichmentPage.tsx
 import { useState } from 'react'
-import { Sparkles, UserCheck, X } from 'lucide-react'
+import { Sparkles, UserCheck, X, Zap, Info } from 'lucide-react'
 import { TopNav } from '@/components/layout/TopNav'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EnrichmentTable } from '@/components/enrichment/EnrichmentTable'
@@ -26,36 +26,32 @@ export function EnrichmentPage() {
 
   const { updateLead } = useLeads()
 
-  // ── Selection state ─────────────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [contactFinderOpen, setContactFinderOpen] = useState(false)
 
   const selectedLeads = pendingLeads.filter(l => selectedIds.includes(l.id))
 
-  // ── Handle ContactFinder confirm ────────────────────────────────────────────
   const handleContactFinderConfirm = (decisions: ContactDecision[]) => {
     const accepted = decisions.filter(d => d.accept)
 
     for (const d of accepted) {
       const updates: Partial<Lead> = {}
 
-      if (d.contactName)       updates.contactName        = d.contactName
-      if (d.contactTitle)      updates.contactJobTitle    = d.contactTitle
+      if (d.contactName)        updates.contactName        = d.contactName
+      if (d.contactTitle)       updates.contactJobTitle    = d.contactTitle
       if (d.contactLinkedinUrl) updates.contactLinkedinUrl = d.contactLinkedinUrl
-      if (d.contactEmail)      updates.contactEmail       = d.contactEmail
+      if (d.contactEmail)       updates.contactEmail       = d.contactEmail
       if (d.companyLinkedinUrl) updates.companyLinkedinUrl = d.companyLinkedinUrl
-      if (d.companyWebsite)    updates.companyWebsite     = d.companyWebsite
-      if (d.employeeCount != null) {
+      if (d.companyWebsite)     updates.companyWebsite     = d.companyWebsite
+      if (d.industry)           updates.companyIndustry    = d.industry
+      if (d.employeeCount != null)
         updates.companyEmployeeCount = String(d.employeeCount)
-      }
-      // Mark as enriched only if we found an email
-      if (d.contactEmail) {
-        updates.enrichmentStatus = 'enriched'
-      }
 
-      if (Object.keys(updates).length > 0) {
+      // Mark enriched only when we found an email
+      if (d.contactEmail) updates.enrichmentStatus = 'enriched'
+
+      if (Object.keys(updates).length > 0)
         updateLead({ id: d.leadId, updates })
-      }
     }
 
     setContactFinderOpen(false)
@@ -63,7 +59,7 @@ export function EnrichmentPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopNav
         title="Enrichment"
         subtitle={`${pendingLeads.length} lead${pendingLeads.length !== 1 ? 's' : ''} awaiting enrichment`}
@@ -92,18 +88,25 @@ export function EnrichmentPage() {
         }
       />
 
-      <div className="flex-1 p-6 flex flex-col gap-6">
+      <div className="flex-1 p-6 flex flex-col gap-5">
         <PageHeader
           title="Contact Enrichment"
-          description="Find emails and LinkedIn profiles for your leads. Select one or more leads and click Find Contacts to run the full Apollo flow."
+          description="Find emails and LinkedIn profiles for your leads using Apollo.io and Hunter.io"
         />
 
         {/* ── Selection action bar ── */}
         {selectedIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-              {selectedIds.length} lead{selectedIds.length !== 1 ? 's' : ''} selected
-            </span>
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-md bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                {selectedIds.length}
+              </div>
+              <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                lead{selectedIds.length !== 1 ? 's' : ''} selected
+              </span>
+            </div>
+
+            <div className="h-4 w-px bg-indigo-200 dark:bg-indigo-700" />
 
             <Button
               size="sm"
@@ -114,13 +117,13 @@ export function EnrichmentPage() {
               Find Contacts via Apollo
             </Button>
 
-            <p className="text-xs text-blue-500 dark:text-blue-400">
-              Apollo will search for the right person + email at each company
+            <p className="text-xs text-indigo-500 dark:text-indigo-400 hidden sm:block">
+              Apollo looks up the right person + email at each company automatically
             </p>
 
             <button
               onClick={() => setSelectedIds([])}
-              className="ml-auto flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              className="ml-auto flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
               Clear
@@ -128,13 +131,19 @@ export function EnrichmentPage() {
           </div>
         )}
 
-        {/* ── Credit counters ── */}
+        {/* ── Credit cards ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
+          {/* Hunter */}
+          <Card className="shadow-sm">
             <CardBody>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Hunter.io Credits
-              </p>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                  <Sparkles className="w-4 h-4 text-orange-500" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Hunter.io Credits
+                </p>
+              </div>
               <ProgressBar
                 value={hunterCredits.used}
                 max={hunterCredits.total}
@@ -148,27 +157,47 @@ export function EnrichmentPage() {
                 }
               />
               {hunterCredits.used >= hunterCredits.total && (
-                <p className="text-xs text-red-500 mt-1">
+                <p className="text-xs text-red-500 mt-1.5">
                   ⚠️ Monthly limit reached. Resets next month.
                 </p>
               )}
+              <p className="text-xs text-slate-400 mt-1.5">
+                Used as fallback when Apollo doesn't return an email
+              </p>
             </CardBody>
           </Card>
 
-          <Card>
+          {/* Apollo */}
+          <Card className="shadow-sm">
             <CardBody>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Apollo.io Export Credits (free tier)
-              </p>
-              <ProgressBar
-                value={0}
-                max={50}
-                label="50 email reveals/month — used when Apollo needs to reveal an email"
-                color="blue"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                ℹ️ Emails already in Apollo search results are free. Reveals cost 1 credit each.
-              </p>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                  <Zap className="w-4 h-4 text-indigo-500" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Apollo.io Credits
+                </p>
+              </div>
+              <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-500 font-bold shrink-0">FREE</span>
+                  <span>People search — finding the right person at a company</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500 font-bold shrink-0">1 credit</span>
+                  <span>Per email reveal (Apollo People Enrichment)</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500 font-bold shrink-0">1 credit</span>
+                  <span>Per company enrichment (gets real LinkedIn employee count)</span>
+                </div>
+              </div>
+              <div className="flex items-start gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-400">
+                  Free tier: ~10 export credits/month. Employee counts from Apollo come from LinkedIn data — more accurate than Seek.
+                </p>
+              </div>
             </CardBody>
           </Card>
         </div>

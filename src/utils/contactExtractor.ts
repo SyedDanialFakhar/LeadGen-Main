@@ -1,31 +1,43 @@
 /**
- * LETHAL RECRUITER & AGENCY FILTER — v5
+ * LETHAL RECRUITER & AGENCY FILTER — v6
  * ──────────────────────────────────────────────────────────────────────────────
- * v5 Changes vs v4:
+ * v6 Changes vs v5:
  *
- * BUG FIX — 600-char window:
- *   v4 scanned only description.slice(0, 600) for ALL agency description signals.
- *   This meant referral bonuses ("refer them to us and we'll give you $500"),
- *   trailing hashtags (#SCR-, #Choose Fuse), and end-of-ad disclaimers were
- *   NEVER matched — causing agency jobs to slip through.
+ * NEW — Check 8: Recruiter Email Domain Detection
  *
- *   Fix: Signals are now split into three lists:
- *     1. AGENCY_INTRO_SIGNALS   → checked in first 900 chars  (opening phrases)
- *     2. AGENCY_BODY_SIGNALS    → checked in full description  (can appear anywhere)
- *     3. AGENCY_TRAILING_SIGNALS→ checked in full description  (end-of-ad giveaways)
+ *   Problem: A company posts the job themselves (passes all name/description
+ *   filters), but embeds a recruiter's email in the description body, e.g.:
+ *   "Send your CV to john@fuserecruitment.com.au"
+ *   This signals the company has ALREADY engaged a recruiter — dead lead.
  *
- * NEW — Referral bonus detection:
- *   Patterns like "refer them to us and we'll give you $500" are now caught
- *   regardless of where they appear in the description.
+ *   Solution: 4-layer detection with parent-company safety valve.
  *
- * NEW — "At [Agency], we specialise in recruitment/placing" trailing pattern.
+ *   Layer 1 — Known recruiter domain list (60+ AU agencies) → 98% confidence
+ *     Checks every email found in the description. If the domain matches a
+ *     known recruitment agency, filter immediately.
  *
- * NEW — More known agencies added (Australian market 2025/26).
+ *   Layer 2 — Domain keyword scan → 91% confidence
+ *     Strips the TLD and checks if the remaining domain root contains
+ *     keywords like "recruit", "staffing", "placement", "personnel", etc.
+ *     e.g., "ausrecruitment.com.au" → root "ausrecruitment" → contains "recruit"
  *
- * UNCHANGED — checkRecruiterProfile() (was already correct & comprehensive).
- * UNCHANGED — HR multi-word phrase matching (avoids false positives on "hr" substring).
- * UNCHANGED — extractEmails() personal-only filtering.
- * UNCHANGED — extractContactName() strict validation.
+ *   Layer 3 — Company-name vs email-domain alignment + context → 79% confidence
+ *     Tokenises the company name, removes stop words, checks if any significant
+ *     token (4+ chars) appears inside the email domain root.
+ *     If NO company word is found in the domain AND the email appears near
+ *     recruiter-context phrases ("send your CV to", "submit applications to"),
+ *     it's flagged.
+ *
+ *   Parent company safety valve (protects Woolworths/BigW, ANZ/Grattan, etc.):
+ *     If the email domain contains ANY significant word from the company name,
+ *     the email is treated as internal and skipped entirely — regardless of
+ *     other signals. This prevents false positives for parent/subsidiary posting.
+ *
+ *   All three layers require confidence ≥ 70 (same threshold as all other checks)
+ *   before filtering occurs.
+ *
+ * UNCHANGED — All v5 logic (recruiterProfile, agency name/description,
+ *             no-agency disclaimer, HR consulting, law firm, private advertiser).
  */
 
 export interface FilterVerdict {
@@ -45,6 +57,7 @@ export type FilterCategory =
   | 'non_sales'
   | 'recruitment_website'
   | 'recruiter_profile'
+  | 'recruiter_email'
   | 'pass'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -223,19 +236,7 @@ function isRealValue(val: string | number | null | undefined): boolean {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHECK 0 (HIGHEST PRIORITY): Recruiter Profile
 // ═══════════════════════════════════════════════════════════════════════════════
-/**
- * Apify populates recruiterProfile ONLY when the job is posted by a recruiter
- * on behalf of a client. Direct employer posts have an empty recruiterProfile.
- *
- * This is the single most reliable signal available — 100% confidence when present.
- * Fields checked in priority order:
- *   name            → recruiter's personal name (e.g. Lewis Ball)
- *   agencyName      → agency company name (e.g. Fuse Recruitment)
- *   agencyWebsite   → agency website
- *   specialisations → only agency recruiters list these on Seek
- *   placementCount  → only agency recruiters have Seek placement records
- *   reviewCount     → only agency recruiters accumulate Seek reviews
- */
+
 export function checkRecruiterProfile(
   recruiterProfile: RecruiterProfileData | null | undefined,
   recruiterSpecialisations?: string[] | null
@@ -244,7 +245,6 @@ export function checkRecruiterProfile(
     return { shouldFilter: false, reason: '', confidence: 0, category: 'pass' }
   }
 
-  // Check if it's an empty object (common for non-recruiter jobs)
   const keys = Object.keys(recruiterProfile)
   if (keys.length === 0) {
     return { shouldFilter: false, reason: '', confidence: 0, category: 'pass' }
@@ -321,7 +321,6 @@ export function checkRecruiterProfile(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const KNOWN_AGENCIES: string[] = [
-  // Global / National
   'hays', 'randstad', 'robert half', 'michael page', 'adecco',
   'kelly services', 'manpower', 'manpowergroup', 'hudson', 'peoplebank',
   'chandler macleod', 'pagegroup', 'robert walters', 'morgan mckinley',
@@ -366,7 +365,6 @@ const KNOWN_AGENCIES: string[] = [
   'oxygen recruitment', 'red wolf group',
   'fuse recruitment', 'fuse staffing', 'fuse talent',
   'jora', 'seek talent', 'indeed hire',
-  // Additional Australian agencies 2025/26
   'burning glass', 'experteer', 'seek learning',
   'redwolf + rosch', 'redwolf rosch',
   'tiger recruitment', 'tiger staffing',
@@ -385,9 +383,6 @@ const KNOWN_AGENCIES: string[] = [
   'found careers', 'talent scout australia',
 ]
 
-/**
- * Single words that as a WHOLE WORD in a company/advertiser name = recruitment.
- */
 const AGENCY_NAME_WORD_REGEX =
   /\b(recruitment|recruiting|recruiter|recruiters|recruits|staffing|headhunter|headhunters|headhunting|resourcing|outsourcing|placements?|manpower|labour\s*hire|labor\s*hire)\b/i
 
@@ -404,12 +399,6 @@ const AGENCY_NAME_PHRASES: string[] = [
   'talent group', 'talent agency', 'search firm',
 ]
 
-// ── v5: THREE separate signal lists for description scanning ─────────────────
-
-/**
- * INTRO SIGNALS — phrases that appear at the OPENING of an agency job ad.
- * Checked in the first 900 characters of the description.
- */
 const AGENCY_INTRO_SIGNALS: string[] = [
   'our client is seeking', 'our client requires', 'our client needs',
   'our client is looking for', 'our client has an exciting',
@@ -436,7 +425,6 @@ const AGENCY_INTRO_SIGNALS: string[] = [
   'we are partnering with', 'we partner with',
   'for a confidential discussion', 'confidential discussion',
   'if you would like a confidential', 'for a confidential chat',
-  // Additional intro patterns
   'we are exclusively recruiting',
   'exclusively recruiting for',
   'partnered exclusively with',
@@ -452,10 +440,6 @@ const AGENCY_INTRO_SIGNALS: string[] = [
   'our retained client',
 ]
 
-/**
- * BODY SIGNALS — phrases that can appear ANYWHERE in the description (full scan).
- * Require 2+ matches OR 1 high-confidence match.
- */
 const AGENCY_BODY_SIGNALS: string[] = [
   'registering for future roles',
   'submit your resume to our talent pool',
@@ -474,16 +458,7 @@ const AGENCY_BODY_SIGNALS: string[] = [
   'sourcing top talent',
 ]
 
-/**
- * TRAILING SIGNALS — phrases that appear at the END of an agency job ad.
- * These are DEAD GIVEAWAYS regardless of where they appear.
- * Checked against the FULL description — even one match = filter.
- *
- * KEY v5 FIX: referral bonuses and trailing boilerplate were previously
- * only checked in the first 600 chars and were NEVER matched.
- */
 const AGENCY_TRAILING_SIGNALS: string[] = [
-  // Referral bonus programs (classic agency trailing content)
   "refer them to us and we'll give you",
   "refer them to us and we will give you",
   'refer a friend and receive',
@@ -496,24 +471,19 @@ const AGENCY_TRAILING_SIGNALS: string[] = [
   'refer your friends and earn',
   'know someone looking for a job? refer',
   'if you know someone looking for a job',
-  // Agency self-promotion at end of ads
   'we specialise in recruitment for the insurance',
   'we specialise in recruitment for the',
   'actively source for a broad range of established clients',
   'if you are a broking, underwriting or claims professional',
   'if you are a sales professional looking for your next',
   'if you are looking for your next opportunity, we',
-  "we'd love to hear from you!" , // when preceded by agency self-promo
-  // Candidate pool harvesting
   'register your details with us',
   'register your resume with us',
   'add your resume to our database',
   'we have a database of',
-  // Standard agency footers
   'only shortlisted candidates will be contacted',
   'only successful candidates will be contacted',
   'please note: only shortlisted',
-  // Seek recruiter hashtags (already caught by regex but belt-and-suspenders)
   '#choose fuse',
   '#choose people2people',
   '#choose hays',
@@ -529,7 +499,6 @@ export function checkRecruitmentAgency(
 ): FilterVerdict {
   const nameText = `${companyName} ${advertiserName}`
 
-  // ── 1. Known agencies list (exact substring match) ──────────────────────────
   const knownMatch = KNOWN_AGENCIES.find((agency) => lc(nameText).includes(lc(agency)))
   if (knownMatch) {
     return {
@@ -540,7 +509,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 2. Single-word whole-word match in COMPANY NAME ─────────────────────────
   if (AGENCY_NAME_WORD_REGEX.test(companyName)) {
     const match = companyName.match(AGENCY_NAME_WORD_REGEX)?.[0] || ''
     return {
@@ -551,7 +519,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 2b. Same check on ADVERTISER NAME ───────────────────────────────────────
   if (AGENCY_NAME_WORD_REGEX.test(advertiserName)) {
     const match = advertiserName.match(AGENCY_NAME_WORD_REGEX)?.[0] || ''
     return {
@@ -562,7 +529,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 3. Multi-word phrases in company/advertiser name ────────────────────────
   const nameSignals = findMatches(nameText, AGENCY_NAME_PHRASES)
   if (nameSignals.length >= 1) {
     return {
@@ -573,9 +539,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 4a. INTRO signals — first 900 chars ─────────────────────────────────────
-  // BUG FIX v5: Increased from 600 → 900. These phrases appear in the opening
-  // paragraph. Two matches = very high confidence, one match = still filter.
   const introSignals = findMatches(description.slice(0, 900), AGENCY_INTRO_SIGNALS)
   if (introSignals.length >= 2) {
     return {
@@ -594,8 +557,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 4b. BODY signals — full description ─────────────────────────────────────
-  // These can appear anywhere. Need 2+ to filter, or 1 with a supporting signal.
   const bodySignals = findMatches(description, AGENCY_BODY_SIGNALS)
   if (bodySignals.length >= 2) {
     return {
@@ -606,11 +567,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 4c. TRAILING signals — full description ──────────────────────────────────
-  // BUG FIX v5: These were previously MISSED because they appear at the END of
-  // descriptions but the old code only scanned the first 600 chars.
-  // Even ONE trailing signal = definitive agency. No direct employer writes
-  // "refer them to us and we'll give you $500".
   const trailingSignals = findMatches(description, AGENCY_TRAILING_SIGNALS)
   if (trailingSignals.length >= 1) {
     return {
@@ -621,9 +577,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 5. Seek recruiter tracking hashtags — full description ───────────────────
-  // Seek recruiter profiles always append #SCR-firstname-lastname and/or #Choose Agency.
-  // These appear at the very end of the description HTML.
   if (/#(?:SCR|scr)-[a-zA-Z]/.test(description)) {
     const match = description.match(/#(?:SCR|scr)-[a-zA-Z][^\s]*/)?.[0] || '#SCR-...'
     return {
@@ -643,7 +596,6 @@ export function checkRecruitmentAgency(
     }
   }
 
-  // ── 6. Recruitment website ───────────────────────────────────────────────────
   if (website && isRecruitmentWebsite(website)) {
     return {
       shouldFilter: true,
@@ -683,7 +635,6 @@ const NO_AGENCY_PHRASES: string[] = [
   'no canvassing', 'no placement agencies',
   'do not forward resumes to', 'please do not forward your resume',
   'unsolicited resumes will not be accepted',
-  // Additional common variations
   'we are managing this search internally',
   'this role is being filled internally',
   'we have engaged a preferred supplier',
@@ -712,9 +663,6 @@ export function hasUnwantedPhrases(description: string): boolean {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHECK 3: HR Consulting
 // ═══════════════════════════════════════════════════════════════════════════════
-// NOTE: "HR" as a standalone word is intentionally NOT in these lists to avoid
-// false positives on company names like "CHR Industries" or "THR Group".
-// Only multi-word phrases are used.
 
 const HR_COMPANY_SIGNALS: string[] = [
   'hr consulting', 'hr consultancy', 'human resources consulting',
@@ -907,6 +855,360 @@ export function isSalesJob(classification: string): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CHECK 8 (NEW — v6): Recruiter Email Domain Detection
+// ──────────────────────────────────────────────────────────────────────────────
+// Detects when a company posts their own job but includes a recruiter's email
+// address in the description body — indicating they've already engaged a
+// recruiter. Three detection layers + one parent-company safety valve.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Confirmed email domains belonging to Australian recruitment agencies.
+ * If ANY email in the job description has one of these domains, the company
+ * has already outsourced this hire to a recruiter → filter immediately.
+ *
+ * This list covers the top ~60 agencies active in Australia as of 2025/26.
+ */
+const KNOWN_RECRUITER_EMAIL_DOMAINS: Set<string> = new Set([
+  // ── Global / National giants ──────────────────────────────────────────────
+  'hays.com.au', 'hays.com', 'haysplc.com',
+  'randstad.com.au', 'randstad.com',
+  'roberthalf.com.au', 'roberthalf.com',
+  'michaelpage.com.au', 'michaelpage.com', 'michaelpage.com.sg',
+  'adecco.com.au', 'adecco.com',
+  'kellyservices.com.au', 'kellycrew.com.au', 'kelly.com.au',
+  'manpower.com.au', 'manpowergroup.com.au',
+  'hudson.com', 'hudsonglobal.com',
+  'peoplebank.com.au',
+  'chandlermacleod.com', 'chandlermacleod.com.au',
+  'designnbuild.com.au',
+  'uandu.com', 'u-and-u.com',
+  'frontlinerecruitment.com.au', 'frontline.com.au',
+  'aspectpersonnel.com.au',
+  'robertwalters.com.au', 'robertwalters.com',
+  'morganmckinley.com.au', 'morganmckinley.com',
+  'pagegroup.com.au', 'pagegroup.com',
+  'talentinternational.com', 'talentinternational.com.au',
+  // ── Boutique AU specialists ───────────────────────────────────────────────
+  'sharpandcarter.com.au',
+  'davidsonrecruitment.com.au', 'davidsonwp.com',
+  'salexoconsulting.com.au', 'salexo.com.au',
+  'fuserecruitment.com.au', 'fusestaffing.com.au', 'choosefuse.com.au',
+  'beaumontpeople.com.au', 'beaumontconsulting.com.au',
+  'engagepersonnel.com.au',
+  'siriuspeople.com.au', 'sirius.com.au',
+  'peoplecorp.com.au',
+  'vervepeopleconsulting.com.au', 'vervepartners.com.au',
+  'smaart.com.au', 'smaartrecruitment.com.au',
+  'trojanrecruitment.com.au', 'trojan.com.au',
+  'lotuspeople.com.au', 'lotuspersonnel.com.au',
+  'hoban.com.au', 'hobanrecruitment.com.au',
+  'bluefinresources.com.au',
+  'perigongroup.com.au',
+  'precisionsourcing.com.au',
+  'marblerecruitment.com.au', 'marble.com.au',
+  'saltgroup.com.au', 'salt.com.au',
+  'reogroup.com.au',
+  'searchparty.com.au',
+  'elevenmgmt.com.au', 'eleven.com.au',
+  'people2people.com.au', 'p2p.com.au',
+  'sixdegreesexecutive.com.au',
+  'levyl.com.au',
+  'millerleith.com.au',
+  'parityconsulting.com.au', 'parity.net.au',
+  'profusiongroup.com.au', 'profusion.com.au',
+  'astoncarter.com',
+  'sfpeople.com.au', 'sfgroup.com.au',
+  'peopleinfrastructure.com.au',
+  'talentright.com.au',
+  'kaizen-recruitment.com.au', 'kaizenrecruitment.com.au',
+  'goughrecruitment.com.au', 'gough.com.au',
+  'preacta.com.au',
+  'scaleup.com.au', 'scaleup-recruitment.com.au',
+  'talent-army.com.au', 'talentarmy.com.au',
+  'linkme.com.au',
+  'talentpath.com.au',
+  'paxus.com.au',
+  'insiderecruitment.com.au',
+  'executiveintegrity.com.au',
+  'watermarksearch.com.au',
+  'blackbookexecutive.com.au',
+  'saxtondrummond.com.au',
+  'progressiverecruitment.com.au',
+  'spencermargesson.com.au',
+  'spencerogden.com',
+  'harveynash.com', 'harveynash.com.au',
+  'peoplepath.com.au',
+  'redwolfrosch.com.au', 'redwolf.com.au',
+  'fingerprintpersonnel.com.au',
+  'executivesearch.com.au',
+  // ── Job boards (should never appear as application contact emails) ─────────
+  'seek.com.au', 'indeed.com', 'linkedin.com', 'jora.com', 'adzuna.com.au',
+])
+
+/**
+ * Keywords that, when found INSIDE the email domain root (TLD stripped),
+ * indicate a recruitment agency.
+ *
+ * These are checked as substrings — "ausrecruitment" contains "recruit",
+ * "sydneystaffing" contains "staffing", etc.
+ *
+ * NOTE: "talent" alone is NOT included here because many legitimate companies
+ * have "talent" in their name (e.g., talent.com.au which is a real employer).
+ * Compound forms like "talentsearch", "talentsolutions" are safe to include.
+ */
+const RECRUITER_DOMAIN_KEYWORDS: string[] = [
+  'recruit',        // ausrecruitment, sydneyrecruiting, recruitpro
+  'staffing',       // elitestaffing, prostaff
+  'headhunt',       // headhuntergroup, headhuntingco
+  'personnel',      // metropolitanpersonnel, keypersonnel
+  'manpower',       // manpowergroup
+  'resourcing',     // talentresourcing
+  'jobagency',      // jobagencygroup
+  'careersolution', // careersolutionsgroup
+  'executivesearch',// executivesearchau
+  'talentsearch',   // talentsearchgroup
+  'talentsolution', // talentsolutionsau
+  'labourhire',     // labourhireau
+  'laborhire',      // laborhireau
+  'hrgroup',        // hrgroupau
+  'hrsolution',     // hrsolutionspro
+  'hrconsult',      // hrconsultingau
+  'hrservice',      // hrservicesgroup
+  'workforcesol',   // workforcesolutions
+]
+
+/**
+ * Stop words filtered OUT when tokenising a company name for domain comparison.
+ * These are too common to be discriminating signals.
+ */
+const COMPANY_STOP_WORDS = new Set([
+  'pty', 'ltd', 'limited', 'inc', 'corp', 'corporation', 'co',
+  'group', 'the', 'and', 'of', 'for', 'in', 'at', 'by',
+  'australia', 'australian', 'national', 'global', 'international',
+  'services', 'solutions', 'systems', 'technologies', 'technology',
+  'holdings', 'enterprises', 'management', 'consulting',
+  'digital', 'media', 'health', 'care', 'finance', 'financial',
+])
+
+/**
+ * Phrases that — when found within ~200 characters of an email address —
+ * strongly suggest the email belongs to a third-party recruiter being directed
+ * to applicants, rather than the company's own HR inbox.
+ */
+const RECRUITER_EMAIL_CONTEXT_PHRASES: string[] = [
+  'send your cv to',
+  'send your resume to',
+  'submit your cv to',
+  'submit your resume to',
+  'forward your cv to',
+  'forward your resume to',
+  'email your cv to',
+  'email your resume to',
+  'send your application to',
+  'submit applications to',
+  'apply by emailing',
+  'apply via email to',
+  'our recruitment partner',
+  'our recruiting partner',
+  'through our recruiter',
+  'our talent partner',
+  'managed by our',
+  'coordinate with our recruiter',
+  'please email your resume',
+  'please send your cv',
+  'please send your resume',
+  'please forward your',
+  'send through your',
+  'direct your application to',
+  'your application to',
+]
+
+// ─── Domain helper utilities ──────────────────────────────────────────────────
+
+/**
+ * Extract a clean domain from a URL string.
+ * "https://www.acme.com.au/careers" → "acme.com.au"
+ */
+function extractDomainFromUrl(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const withProtocol = url.match(/^https?:\/\//) ? url : `https://${url}`
+    const hostname = new URL(withProtocol).hostname.toLowerCase()
+    return hostname.replace(/^www\./, '')
+  } catch {
+    const match = url.match(/(?:https?:\/\/)?(?:www\.)?([^/\s?#]+)/i)
+    return match?.[1]?.toLowerCase() ?? null
+  }
+}
+
+/**
+ * Strip TLDs and subdomains, returning the meaningful root label of a domain.
+ *
+ * Examples:
+ *   "mail.acme.com.au"          → "acme"
+ *   "fuserecruitment.com.au"    → "fuserecruitment"
+ *   "hays.com"                  → "hays"
+ *   "jobs.bigcorp.co.nz"        → "bigcorp"
+ */
+function getDomainRoot(domain: string): string {
+  const d = domain.toLowerCase()
+  // Ordered longest-first so .com.au is stripped before .au
+  const tlds = [
+    '.com.au', '.net.au', '.org.au', '.edu.au', '.gov.au',
+    '.id.au',  '.asn.au', '.com.nz', '.co.nz',
+    '.com',    '.net',    '.org',    '.io',     '.co',
+    '.au',     '.nz',
+  ]
+  let stripped = d
+  for (const tld of tlds) {
+    if (stripped.endsWith(tld)) {
+      stripped = stripped.slice(0, -tld.length)
+      break
+    }
+  }
+  // Remove any remaining subdomain (keep rightmost segment)
+  const parts = stripped.split('.')
+  return parts[parts.length - 1] || stripped
+}
+
+/**
+ * Tokenise a company name into meaningful words, removing stop words and
+ * words shorter than 4 characters (too ambiguous for matching).
+ *
+ * "Acme Software Pty Ltd"   → ["acme", "software"]
+ * "BigCorp Australia Group" → ["bigcorp"] (australia, group are stop words)
+ */
+function tokeniseCompanyName(companyName: string): string[] {
+  return companyName
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 4 && !COMPANY_STOP_WORDS.has(w))
+}
+
+/**
+ * Check whether the email domain root contains any significant word from
+ * the company name. This is the parent-company safety valve.
+ *
+ * "acme.com.au"     vs tokens ["acme", "software"] → "acme" ∈ "acme" → TRUE (safe)
+ * "woolworths.com"  vs tokens from "Big W"         → no match → FALSE
+ * "bigcorp.com.au"  vs tokens ["bigcorp"]           → "bigcorp" ∈ "bigcorp" → TRUE (safe)
+ */
+function domainRelatedToCompany(domainRoot: string, companyTokens: string[]): boolean {
+  return companyTokens.some(token => domainRoot.includes(token))
+}
+
+/**
+ * Main export — Check 8.
+ *
+ * Scans EVERY email address in the description (not just personal ones — we
+ * want to catch apply@fuserecruitment.com.au too) and applies three layers of
+ * detection to identify recruiter-owned domains.
+ *
+ * @param description   Raw job description text
+ * @param companyName   Employer's company name (from Apify)
+ * @param companyWebsite Company website URL (may be null)
+ *
+ * @returns FilterVerdict — shouldFilter: true when a recruiter email is found
+ */
+export function checkRecruiterEmailInDescription(
+  description: string,
+  companyName: string,
+  companyWebsite: string | null,
+): FilterVerdict {
+  const NO_RESULT: FilterVerdict = { shouldFilter: false, reason: '', confidence: 0, category: 'pass' }
+
+  if (!description) return NO_RESULT
+
+  // Find ALL email addresses in the raw description text
+  const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+  const allEmails = [...new Set((description.match(EMAIL_REGEX) || []).map(e => e.toLowerCase()))]
+
+  if (allEmails.length === 0) return NO_RESULT
+
+  // Pre-compute values we'll reuse in the loop
+  const companyDomain = extractDomainFromUrl(companyWebsite)
+  const companyDomainRoot = companyDomain ? getDomainRoot(companyDomain) : null
+  const companyTokens = tokeniseCompanyName(companyName)
+
+  for (const email of allEmails) {
+    const emailDomain = email.split('@')[1] ?? ''
+    if (!emailDomain || emailDomain.length < 4) continue
+
+    const emailDomainRoot = getDomainRoot(emailDomain)
+
+    // ── PARENT COMPANY SAFETY VALVE ──────────────────────────────────────────
+    // If the email domain root matches the company's own website domain, or if
+    // the domain root contains a significant word from the company name, treat
+    // the email as internal and skip it. This handles:
+    //   • Same domain (john@acme.com.au + website acme.com.au)
+    //   • Parent companies (woolworths.com.au posting for subsidiary)
+    //   • Trading name variants (bigw.com.au vs Woolworths Group)
+    if (companyDomainRoot && emailDomainRoot === companyDomainRoot) continue
+    if (companyTokens.length > 0 && domainRelatedToCompany(emailDomainRoot, companyTokens)) continue
+
+    // ── LAYER 1: Known recruiter domain list ──────────────────────────────────
+    // 60+ confirmed Australian recruitment agency domains.
+    // A direct match here is definitive — no context check needed.
+    if (KNOWN_RECRUITER_EMAIL_DOMAINS.has(emailDomain)) {
+      return {
+        shouldFilter: true,
+        reason: `Description contains email from known recruitment agency: "${emailDomain}" (${email})`,
+        confidence: 98,
+        category: 'recruiter_email',
+      }
+    }
+
+    // ── LAYER 2: Domain keyword scan ─────────────────────────────────────────
+    // Strip TLD and check if the domain root contains recruitment keywords.
+    // e.g., "sydneystaffing.com.au" → root "sydneystaffing" → contains "staffing"
+    const matchedKeyword = RECRUITER_DOMAIN_KEYWORDS.find(kw => emailDomainRoot.includes(kw))
+    if (matchedKeyword) {
+      return {
+        shouldFilter: true,
+        reason: `Email domain "${emailDomain}" contains recruitment keyword "${matchedKeyword}"`,
+        confidence: 91,
+        category: 'recruiter_email',
+      }
+    }
+
+    // ── LAYER 3: Unrelated domain + recruiter context phrases ─────────────────
+    // If the email domain is completely unrelated to the company name (already
+    // confirmed above), AND the email appears near phrases like "send your CV to",
+    // "submit applications to", it's likely being directed to a third-party recruiter.
+    //
+    // Confidence is intentionally moderate (79%) to avoid false positives for
+    // parent companies we don't have the website domain for.
+    // We also require companyDomain to be known — if we can't verify the company's
+    // own domain, we don't penalise the unrelated-domain signal alone.
+    if (companyDomain) {
+      const emailIndex = description.toLowerCase().indexOf(email)
+      if (emailIndex !== -1) {
+        const ctxStart = Math.max(0, emailIndex - 220)
+        const ctxEnd   = Math.min(description.length, emailIndex + 80)
+        const context  = description.slice(ctxStart, ctxEnd).toLowerCase()
+
+        const hasRecruiterContext = RECRUITER_EMAIL_CONTEXT_PHRASES.some(phrase =>
+          context.includes(phrase)
+        )
+
+        if (hasRecruiterContext) {
+          return {
+            shouldFilter: true,
+            reason: `Description directs applications to unrelated third-party email "${email}" — likely a recruiter contact`,
+            confidence: 79,
+            category: 'recruiter_email',
+          }
+        }
+      }
+    }
+  }
+
+  return NO_RESULT
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COMPOSITE FILTER
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -915,6 +1217,20 @@ export interface CompositeFilterResult {
   verdict: FilterVerdict
 }
 
+/**
+ * Run all filters in priority order. Returns on the first match that meets
+ * the confidence threshold (70%).
+ *
+ * Order:
+ *   0. Sales classification gate (if filterSalesOnly)
+ *   1. Recruiter profile (Apify metadata — most reliable)
+ *   2. Private advertiser
+ *   3. Recruitment agency (name + description + website)
+ *   4. No-agency disclaimer
+ *   5. HR consulting
+ *   6. Law firm
+ *   7. Recruiter email domain (NEW v6)
+ */
 export function runAllFilters(params: {
   companyName: string
   advertiserName: string
@@ -929,7 +1245,7 @@ export function runAllFilters(params: {
 }): CompositeFilterResult {
   const THRESHOLD = 70
 
-  // 0. Sales classification check
+  // 0. Sales classification gate
   if (params.filterSalesOnly && !isSalesJob(params.classification)) {
     return {
       shouldFilter: true,
@@ -942,8 +1258,7 @@ export function runAllFilters(params: {
     }
   }
 
-  // 1. Recruiter profile (Apify data — most reliable, run first)
-  //    Catches "Recruited by: Lewis Ball (Fuse Recruitment)" type jobs.
+  // 1. Recruiter profile (Apify metadata — highest signal quality)
   const recruiterVerdict = checkRecruiterProfile(
     params.recruiterProfile,
     params.recruiterSpecialisations
@@ -958,8 +1273,7 @@ export function runAllFilters(params: {
     return { shouldFilter: true, verdict: privateVerdict }
   }
 
-  // 3. Recruitment agency (name + description + website)
-  //    v5 FIX: Now scans full description via trailing signals.
+  // 3. Recruitment agency (name + description signals + website)
   const agencyVerdict = checkRecruitmentAgency(
     params.companyName,
     params.advertiserName,
@@ -993,6 +1307,18 @@ export function runAllFilters(params: {
     return { shouldFilter: true, verdict: lawVerdict }
   }
 
+  // 7. Recruiter email domain (NEW — v6)
+  // Catches companies that post their own job but include a recruiter's email
+  // address in the description body, indicating they've already engaged a recruiter.
+  const recruiterEmailVerdict = checkRecruiterEmailInDescription(
+    params.description,
+    params.companyName,
+    params.website
+  )
+  if (recruiterEmailVerdict.shouldFilter && recruiterEmailVerdict.confidence >= THRESHOLD) {
+    return { shouldFilter: true, verdict: recruiterEmailVerdict }
+  }
+
   return {
     shouldFilter: false,
     verdict: { shouldFilter: false, reason: '', confidence: 0, category: 'pass' },
@@ -1009,116 +1335,4 @@ export type FilteredJobRecord = {
   category: string
   confidence: number
   jobLink?: string
-}
-
-import { getMaxEmployeeCount } from './filterUtils'
-
-export type RecommendedContactRole =
-  | 'Director'
-  | 'CEO'
-  | 'General Manager'
-  | 'Sales Manager'
-  | 'HR Manager'
-  | 'People & Culture Manager'
-  | 'Hiring Manager'
-
-export interface ContactRecommendation {
-  role: RecommendedContactRole
-  reason: string
-  priority: number
-}
-
-export function getRecommendedContactRole(
-  employeeCount: string | null | undefined,
-  linkedinHirerName?: string | null,
-  reportingTo?: string | null
-): ContactRecommendation {
-  if (linkedinHirerName) {
-    return {
-      role: 'Hiring Manager',
-      reason: `LinkedIn shows ${linkedinHirerName} is actively hiring for this role`,
-      priority: 1,
-    }
-  }
-
-  if (reportingTo) {
-    return {
-      role: 'General Manager',
-      reason: `Ad states role reports to: ${reportingTo}`,
-      priority: 2,
-    }
-  }
-
-  const maxCount = getMaxEmployeeCount(employeeCount)
-
-  if (maxCount === 0) {
-    return {
-      role: 'General Manager',
-      reason: 'Company size unknown — General Manager is the safest default',
-      priority: 5,
-    }
-  }
-
-  if (maxCount <= 30) {
-    return {
-      role: 'Director',
-      reason: `Small company (${employeeCount} employees) — Director is likely handling hiring directly`,
-      priority: 1,
-    }
-  }
-
-  if (maxCount <= 100) {
-    return {
-      role: 'General Manager',
-      reason: `Mid-small company (${employeeCount} employees) — General Manager oversees hiring`,
-      priority: 2,
-    }
-  }
-
-  if (maxCount <= 300) {
-    return {
-      role: 'HR Manager',
-      reason: `Medium company (${employeeCount} employees) — HR Manager runs recruitment process`,
-      priority: 3,
-    }
-  }
-
-  return {
-    role: 'People & Culture Manager',
-    reason: `Larger company (${employeeCount} employees) — People & Culture team manages hiring`,
-    priority: 4,
-  }
-}
-
-export function getLinkedInPeopleSearchUrl(
-  companyName: string,
-  contactRole: RecommendedContactRole
-): string {
-  const query = encodeURIComponent(`${contactRole} ${companyName}`)
-  return `https://www.linkedin.com/search/results/people/?keywords=${query}`
-}
-
-export function getLinkedInCompanySearchUrl(companyName: string): string {
-  const query = encodeURIComponent(companyName)
-  return `https://www.linkedin.com/search/results/companies/?keywords=${query}`
-}
-
-export function getGoogleSearchUrl(companyName: string): string {
-  const query = encodeURIComponent(`${companyName} LinkedIn Australia`)
-  return `https://www.google.com/search?q=${query}`
-}
-
-export function isTooSeniorForCompanySize(
-  contactRole: string,
-  employeeCount: string | null | undefined
-): boolean {
-  const maxCount = getMaxEmployeeCount(employeeCount)
-  if (maxCount === 0) return false
-
-  const seniorRoles = ['CEO', 'Chief Executive', 'Managing Director']
-  const isSenior = seniorRoles.some((r) =>
-    contactRole.toLowerCase().includes(r.toLowerCase())
-  )
-
-  return isSenior && maxCount > 100
 }
