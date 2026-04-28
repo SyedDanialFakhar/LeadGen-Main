@@ -10,6 +10,7 @@ import { useScraper } from '@/hooks/useScraper'
 import { useLeads } from '@/hooks/useLeads'
 import { useToast } from '@/hooks/useToast'
 import { getScraperHistory, ScraperHistoryItem } from '@/services/scraperHistoryService'
+import { createLeads } from '@/services/leadsService'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import {
@@ -25,7 +26,8 @@ import {
   Sparkles,
   LayoutGrid,
 } from 'lucide-react'
-import type { LeadStatus, EnrichmentStatus } from '@/types'
+import type { LeadStatus, EnrichmentStatus, NewLead } from '@/types'
+import type { FilteredJobRecord } from '@/services/scraperHistoryService'
 
 // ── Field sanitisers ───────────────────────────────────────────────────────
 
@@ -53,6 +55,68 @@ const safeString = (value: unknown): string | null => {
   return str
 }
 
+// Convert filtered job to NewLead format
+// Convert filtered job to NewLead format
+const convertFilteredJobToLead = (job: FilteredJobRecord): NewLead => {
+  // Validate required fields
+  if (!job.jobLink) {
+    console.warn('Job missing jobLink:', job)
+  }
+  
+  return {
+    datePosted: new Date().toISOString(),
+    jobAdUrl: job.jobLink || '',  // Required field with fallback
+    platform: 'seek',
+    city: 'Australia',
+    location: null,
+    companyName: job.companyName || 'Unknown Company',
+    companyLogo: null,
+    jobTitle: job.jobTitle || 'Unknown Position',
+    contactName: null,
+    contactJobTitle: null,
+    contactEmail: null,
+    contactPhone: null,
+    contactLinkedinUrl: null,
+    companyEmployeeCount: null,
+    companyLinkedinUrl: null,
+    companyWebsite: null,
+    isRecruitmentAgency: job.category === 'recruitment_agency',
+    noAgencyDisclaimer: job.category === 'no_agency_disclaimer',
+    adDescription: null,
+    reportingTo: null,
+    applicantCount: null,
+    opsComments: `Restored from filtered jobs - Original reason: ${job.reason || 'Unknown'} (${job.category || 'Unknown'}, ${job.confidence || 0}% confidence)`,
+    charlieFeedback: null,
+    status: 'Not Sent' as LeadStatus,
+    enrichmentStatus: 'pending' as EnrichmentStatus,
+    emailSent: false,
+    emailSentAt: null,
+    followUpRequired: false,
+    rawScrapeData: null,
+    extractedEmails: [],
+    extractedPhones: [],
+    extractedContactName: null,
+    companyId: null,
+    companyIndustry: null,
+    companySize: null,
+    companyRating: null,
+    companyOverview: null,
+    jobLink: job.jobLink || null,
+    applyLink: null,
+    salary: null,
+    workType: null,
+    workArrangement: null,
+    classification: null,
+    subClassification: null,
+    datePostedRaw: null,
+    expiresAt: null,
+    state: null,
+    country: 'Australia',
+    isVerified: false,
+    matchAssessment: 'High' as const,
+    response: null,
+  }
+}
 // ── Component ─────────────────────────────────────────────────────────────
 
 export function ScraperPage() {
@@ -173,6 +237,27 @@ export function ScraperPage() {
     isVerified: safeBoolean(job.isVerified) ?? false,
     matchAssessment: 'High' as const,
   })
+
+  // ─── Restore filtered jobs from history ─────────────────────────────────
+  const handleRestoreFilteredJobs = async (jobsToRestore: FilteredJobRecord[]) => {
+    if (jobsToRestore.length === 0) {
+      showToast('No jobs to restore', 'error')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const newLeads = jobsToRestore.map(convertFilteredJobToLead)
+      await createLeads(newLeads)
+      showToast(`✅ Restored ${jobsToRestore.length} job(s) to leads`, 'success')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to restore jobs'
+      showToast(message, 'error')
+      console.error('Restore error:', err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleSaveSelected = async () => {
     const selectedJobs = jobs.filter((job) => selectedJobIds.has(job.id))
@@ -296,7 +381,11 @@ export function ScraperPage() {
           {/* ── History Panel (collapsible) ───────────────────────────────── */}
           {showHistory && (
             <div className="animate-in slide-in-from-top-2 duration-200">
-              <ScraperHistory history={history} isLoading={historyLoading} />
+              <ScraperHistory 
+                history={history} 
+                isLoading={historyLoading} 
+                onRestoreJobs={handleRestoreFilteredJobs}
+              />
             </div>
           )}
 

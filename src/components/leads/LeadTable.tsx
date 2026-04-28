@@ -370,9 +370,19 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
     for (const id of selected) {
       const lead = leads.find(l => l.id === id)
       if (!lead) continue
-      const clean = (lead.opsComments || '').replace(/\[Response:\s*(positive|negative|none)\]\s*/i, '')
-      const text = response !== 'none' ? `[Response: ${response}] ${clean}` : clean
-      updateLead({ id, updates: { opsComments: text.trim() || null } })
+  
+      const clean = getCleanComments(lead.opsComments)
+      const text = response !== 'none' 
+        ? `[Response: ${response}] ${clean}` 
+        : clean
+  
+      updateLead({ 
+        id, 
+        updates: { 
+          opsComments: text.trim() || null,
+          response: response === 'none' ? null : response   // ← This was missing
+        } 
+      })
     }
     setSelected([])
   }
@@ -763,7 +773,14 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                         const r = e.target.value as ResponseStatus
                         const clean = getCleanComments(lead.opsComments)
                         const text = r !== 'none' ? `[Response: ${r}] ${clean}` : clean
-                        updateLead({ id: lead.id, updates: { opsComments: text.trim() || null } })
+                      
+                        updateLead({ 
+                          id: lead.id, 
+                          updates: { 
+                            opsComments: text.trim() || null,
+                            response: r === 'none' ? null : r     // ← Add this line
+                          } 
+                        })
                       }}
                       className={cn(
                         'px-2 py-1.5 text-sm rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 font-medium w-full',

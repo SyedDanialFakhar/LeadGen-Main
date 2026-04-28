@@ -58,7 +58,7 @@ function FilteredJobsPanel({
            j.reason.toLowerCase().includes(s)
   })
 
-  const handleRestore = async () => {
+  const handleRestoreSelected = async () => {
     if (!onRestoreJobs || selectedJobs.size === 0) return
     setRestoring(true)
     try {
@@ -67,6 +67,19 @@ function FilteredJobsPanel({
       setSelectedJobs(new Set())
     } catch (err) {
       console.error('Restore failed:', err)
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  const handleRestoreAll = async () => {
+    if (!onRestoreJobs) return
+    setRestoring(true)
+    try {
+      await onRestoreJobs(jobs)
+      setSelectedJobs(new Set())
+    } catch (err) {
+      console.error('Restore all failed:', err)
     } finally {
       setRestoring(false)
     }
@@ -111,15 +124,28 @@ function FilteredJobsPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Restore All button for this run */}
+          {onRestoreJobs && jobs.length > 0 && (
+            <Button
+              size="sm"
+              onClick={handleRestoreAll}
+              isLoading={restoring}
+              leftIcon={<Sparkles className="w-3.5 h-3.5" />}
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md"
+            >
+              Restore All ({jobs.length})
+            </Button>
+          )}
+          
           {selectedJobs.size > 0 && onRestoreJobs && (
             <Button
               size="sm"
-              onClick={handleRestore}
+              onClick={handleRestoreSelected}
               isLoading={restoring}
               leftIcon={<Sparkles className="w-3.5 h-3.5" />}
               className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md"
             >
-              Restore {selectedJobs.size} to Leads
+              Restore Selected ({selectedJobs.size})
             </Button>
           )}
           
@@ -258,6 +284,16 @@ function HistoryRow({ run, onRestoreJobs }: { run: ScraperHistoryItem; onRestore
 
   const statusCfg = STATUS_CONFIG[run.status] || STATUS_CONFIG.completed
 
+  const handleRestoreAllForRun = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!onRestoreJobs || filteredJobs.length === 0) return
+    try {
+      await onRestoreJobs(filteredJobs)
+    } catch (err) {
+      console.error('Restore all for run failed:', err)
+    }
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
       
@@ -337,19 +373,27 @@ function HistoryRow({ run, onRestoreJobs }: { run: ScraperHistoryItem; onRestore
           </div>
         </div>
 
-        {/* Expand Button */}
-        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-          {filteredJobs.length > 0 ? (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 ring-1 ring-red-200 dark:ring-red-800"
+        {/* Expand Button & Restore All for this run */}
+        <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {filteredJobs.length > 0 && onRestoreJobs && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRestoreAllForRun}
+              leftIcon={<Sparkles className="w-3.5 h-3.5" />}
+              className="h-7 px-2 text-xs border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
             >
-              {filteredJobs.length} filtered
-              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          ) : (
-            <span className="text-xs text-slate-300 dark:text-slate-600 px-3">—</span>
+              Restore All ({filteredJobs.length})
+            </Button>
           )}
+          
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 ring-1 ring-red-200 dark:ring-red-800"
+          >
+            {filteredJobs.length} filtered
+            {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </div>
 
@@ -412,7 +456,7 @@ export function ScraperHistory({ history, isLoading, onRestoreJobs }: ScraperHis
               Scraping History
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              {history.length} run{history.length !== 1 ? 's' : ''} • Click filtered count to inspect and restore jobs
+              {history.length} run{history.length !== 1 ? 's' : ''} • Click "Restore All" to add filtered jobs to leads
             </p>
           </div>
 

@@ -8,6 +8,7 @@ import {
   updateLead,
   deleteLead,
   bulkUpdateStatus,
+  bulkUpdateResponse,
   getLeadStats,
   exportLeadsToCSV,
 } from '@/services/leadsService'
@@ -28,6 +29,10 @@ export function useLeads(filters?: LeadFilters) {
   const statsQuery = useQuery({
     queryKey: [STATS_KEY],
     queryFn: getLeadStats,
+    // Ensure stats are always fresh
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   })
 
   const invalidate = () => {
@@ -59,6 +64,8 @@ export function useLeads(filters?: LeadFilters) {
           )
         }
       )
+      // Invalidate stats to refresh counts
+      queryClient.invalidateQueries({ queryKey: [STATS_KEY] })
       showToast('Lead updated successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
@@ -87,7 +94,32 @@ export function useLeads(filters?: LeadFilters) {
           )
         }
       )
+      // Invalidate stats to refresh counts
+      queryClient.invalidateQueries({ queryKey: [STATS_KEY] })
       showToast(`${variables.ids.length} lead(s) marked as ${variables.status}`, 'success')
+    },
+    onError: (err: Error) => showToast(err.message, 'error'),
+  })
+
+  // New mutation for bulk response update
+  const bulkResponseMutation = useMutation({
+    mutationFn: ({ ids, response }: { ids: string[]; response: 'positive' | 'negative' | null }) =>
+      bulkUpdateResponse(ids, response),
+    onSuccess: (_, variables) => {
+      // Update all leads queries in the cache
+      queryClient.setQueriesData(
+        { queryKey: [LEADS_KEY], exact: false },
+        (oldData: Lead[] | undefined) => {
+          if (!oldData) return oldData
+          return oldData.map(lead => 
+            variables.ids.includes(lead.id) ? { ...lead, response: variables.response } : lead
+          )
+        }
+      )
+      // Invalidate stats to refresh counts
+      queryClient.invalidateQueries({ queryKey: [STATS_KEY] })
+      const responseLabel = variables.response === 'positive' ? 'Positive' : variables.response === 'negative' ? 'Negative' : 'No Response'
+      showToast(`${variables.ids.length} lead(s) marked as ${responseLabel}`, 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   })
@@ -138,6 +170,8 @@ export function useLeads(filters?: LeadFilters) {
           )
         }
       )
+      // Invalidate stats to refresh counts
+      queryClient.invalidateQueries({ queryKey: [STATS_KEY] })
       showToast('Leads enriched successfully', 'success')
     },
     onError: (err: Error) => showToast(err.message, 'error'),
@@ -152,6 +186,7 @@ export function useLeads(filters?: LeadFilters) {
     updateLead: updateMutation.mutate,
     deleteLead: deleteMutation.mutate,
     bulkUpdateStatus: bulkStatusMutation.mutate,
+    bulkUpdateResponse: bulkResponseMutation.mutate,
     bulkUpdate: bulkUpdateMutation.mutate,
     createLeads: createMutation.mutate,
     isUpdating: updateMutation.isPending,

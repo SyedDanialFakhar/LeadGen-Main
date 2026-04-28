@@ -124,11 +124,14 @@ export async function bulkUpdateStatus(ids: string[], status: LeadStatus): Promi
 }
 
 export async function deleteLead(id: string): Promise<void> {
-  const { error } = await supabase.from('leads').delete().eq('id', id)
+  const { error } = await supabase
+    .from('leads')
+    .delete()
+    .eq('id', id)
   if (error) throw new Error(`Failed to delete lead: ${error.message}`)
 }
 
-export async function bulkUpdateResponse(ids: string[], response: string): Promise<void> {
+export async function bulkUpdateResponse(ids: string[], response: 'positive' | 'negative' | null): Promise<void> {
   const { error } = await supabase
     .from('leads')
     .update({ response, updated_at: new Date().toISOString() })
@@ -136,29 +139,56 @@ export async function bulkUpdateResponse(ids: string[], response: string): Promi
   if (error) throw new Error(`Failed to bulk update response: ${error.message}`)
 }
 
+// src/services/leadsService.ts
+
 export async function getLeadStats(): Promise<LeadStats> {
   const { data, error } = await supabase
     .from('leads')
-    .select('status, enrichment_status, follow_up_required, created_at, response')
+    .select('status, enrichment_status, follow_up_required, created_at, response, ops_comments')
+  
   if (error) throw new Error(`Failed to fetch stats: ${error.message}`)
 
   const today = getTodayISO()
   const leads = data ?? []
 
-  // A lead has "no response" if response is null, empty string, or the literal string 'none'
-  const hasNoResponse = (l: { response: string | null }) =>
-    l.response === null || l.response === '' || l.response === 'none'
+  const hasNoResponse = (l: any): boolean => {
+    const resp = l.response?.toLowerCase()
+    return !resp || resp === 'none' || resp === ''
+  }
+
+  const isConverted = (l: any): boolean => {
+    const resp = l.response?.toLowerCase()
+    if (resp === 'positive') return true
+    // Fallback: check ops_comments for [Response: positive]
+    if (l.ops_comments) {
+      return /\[Response:\s*positive\]/i.test(l.ops_comments)
+    }
+    return false
+  }
+
+  const isClosed = (l: any): boolean => {
+    const resp = l.response?.toLowerCase()
+    if (resp === 'negative') return true
+    if (l.status === 'Closed' || l.status === 'Sequence Closed') return true
+    
+    // Fallback from comments
+    if (l.ops_comments && /\[Response:\s*negative\]/i.test(l.ops_comments)) {
+      return true
+    }
+    return false
+  }
+
+  const needsFollowUp = (l: any): boolean => {
+    return !isConverted(l) && !isClosed(l)
+  }
 
   return {
     total: leads.length,
     newToday: leads.filter((l) => l.created_at?.startsWith(today)).length,
     awaitingEnrichment: leads.filter((l) => l.enrichment_status === 'pending').length,
-    // Follow-Up Needed = no response yet
-    followUpNeeded: leads.filter(hasNoResponse).length,
-    // Converted = client replied positively (meeting booked, interested, etc.)
-    converted: leads.filter((l) => l.response === 'positive').length,
-    // Closed = client replied negatively / sequence ended without win
-    closed: leads.filter((l) => l.response === 'negative').length,
+    followUpNeeded: leads.filter(needsFollowUp).length,
+    converted: leads.filter(isConverted).length,
+    closed: leads.filter(isClosed).length,
   }
 }
 
