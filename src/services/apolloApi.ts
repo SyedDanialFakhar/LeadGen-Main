@@ -1,23 +1,26 @@
 // src/services/apolloApi.ts
 /**
- * APOLLO.IO API — Verified against official docs, April 2026
+ * APOLLO.IO API SERVICE
+ * Verified against official docs — April 2026
  * ─────────────────────────────────────────────────────────────────────────────
- * Correct base URL: https://api.apollo.io/api/v1  ← /api/v1 NOT /v1
  *
- * Endpoint costs:
- *   GET  /organizations/enrich?domain=   → costs credits, returns LinkedIn employee count
- *   POST /mixed_companies/search         → costs credits, use only if no domain
- *   POST /mixed_people/api_search        → FREE, no credits, no emails returned
- *   POST /people/match?id=               → costs 1 credit, reveals email
+ * ⚠️  REQUIRES A MASTER API KEY — regular keys will get 403 on search endpoints
+ *     Create at: developer.apollo.io/#/keys  →  toggle "Set as master key" ON
  *
- * Key param names (official):
- *   q_organization_domains_list          ← array, no www/@
- *   organization_ids                     ← array of Apollo org IDs
- *   person_titles                        ← array
- *   organization_locations               ← array  e.g. ["Australia"]
- *   organization_num_employees_ranges    ← array  e.g. ["1,500"]
- *   include_similar_titles               ← boolean
- *   person_seniorities                   ← array e.g. ["c_suite","director","manager"]
+ * Base URL:  https://api.apollo.io/api/v1   ← /api/v1 NOT /v1
+ * Auth:      Header  x-api-key: YOUR_KEY    ← not URL param (deprecated)
+ *
+ * CREDIT COSTS (free tier = 75 credits/month):
+ *   GET  /organizations/enrich?domain=  → 1 credit  (real LinkedIn employee count)
+ *   POST /mixed_companies/search        → 1 credit  (fallback when no domain)
+ *   POST /mixed_people/api_search       → FREE ✅   (no credits ever)
+ *   POST /people/match  (id=)           → 1 credit  (reveals the email)
+ *
+ * CREDIT-SAVING RULES applied in this service:
+ *   1. Skip org enrichment if lead already has domain + employee count ≤ 500
+ *   2. Try org enrichment by domain before name search (same cost, more accurate)
+ *   3. People search is always free — use it liberally
+ *   4. Only reveal email for the single best candidate per company
  */
 
 import { getApolloApiKey } from './settingsService'
@@ -28,43 +31,59 @@ const APOLLO_BASE = 'https://api.apollo.io/api/v1'
 
 async function apolloFetch(path: string, init: RequestInit): Promise<Response> {
   const apiKey = await getApolloApiKey()
-  if (!apiKey) throw new Error('Apollo API key not configured — add it in Settings.')
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    accept: 'application/json',
-    'x-api-key': apiKey,
-    ...(init.headers as Record<string, string> | undefined),
+  if (!apiKey) {
+    throw new Error(
+      'Apollo API key not configured.\n\n' +
+      'Steps to fix:\n' +
+      '1. Go to developer.apollo.io/#/keys\n' +
+      '2. Click "Create new key"\n' +
+      '3. Toggle "Set as master key" ON\n' +
+      '4. Copy the key\n' +
+      '5. Add VITE_APOLLO_API_KEY=your_key to your .env file'
+    )
   }
 
-  const res = await fetch(`${APOLLO_BASE}${path}`, { ...init, headers })
+  const res = await fetch(`${APOLLO_BASE}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+      'x-api-key': apiKey,            // Header auth — URL param is deprecated
+      ...(init.headers as Record<string, string> | undefined),
+    },
+  })
 
-  if (!res.ok) {
-    if (res.status === 401)
-      throw new Error('Invalid Apollo API key — check your Settings.')
-    if (res.status === 403)
-      throw new Error('Apollo API key lacks permission for this endpoint (may need a master API key).')
-    if (res.status === 422) {
-      let msg = 'Apollo validation error'
-      try { msg = (await res.json()).message ?? msg } catch {}
-      throw new Error(msg)
-    }
-    if (res.status === 429)
-      throw new Error('Apollo rate limit reached — please wait a moment and try again.')
-    throw new Error(`Apollo error ${res.status}: ${res.statusText}`)
+  if (res.ok) return res
+
+  let errorDetail = ''
+  try { errorDetail = (await res.clone().json()).message ?? '' } catch {}
+
+  switch (res.status) {
+    case 401:
+      throw new Error('Apollo: Invalid API key — check your key in .env and Settings.')
+    case 403:
+      throw new Error(
+        'Apollo: Permission denied.\n' +
+        'You need a MASTER API KEY.\n' +
+        'Go to developer.apollo.io/#/keys → Create key → toggle "Set as master key" ON.'
+      )
+    case 422:
+      throw new Error(`Apollo validation error: ${errorDetail || res.statusText}`)
+    case 429:
+      throw new Error('Apollo rate limit reached — wait 60 seconds and try again.')
+    default:
+      throw new Error(`Apollo error ${res.status}: ${errorDetail || res.statusText}`)
   }
-
-  return res
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// ─── Public Types ──────────────────────────────────────────────────────────────
 
 export interface ApolloOrg {
   id: string
   name: string
   websiteUrl: string | null
+  /** Sourced from LinkedIn — real verified employee count */
   linkedinUrl: string | null
-  /** Comes from LinkedIn data — this is the real verified employee count */
   estimatedNumEmployees: number | null
   industry: string | null
   city: string | null
@@ -79,13 +98,13 @@ export interface ApolloPerson {
   lastName: string
   title: string
   linkedinUrl: string | null
-  /** Always null from /mixed_people/api_search — only set after enrichment */
+  /** Always null from /mixed_people/api_search — must call enrichPersonById */
   email: string | null
   emailStatus: string | null
   orgName: string | null
 }
 
-// Backwards-compat types for existing useEnrichment.ts
+// Backwards-compat (used by existing useEnrichment.ts)
 export interface ApolloContact {
   id: string
   firstName: string
@@ -126,92 +145,81 @@ export interface ApolloEnrichedContact {
 }
 
 // ─── 1. Organization Enrichment by domain ─────────────────────────────────────
-// Best for getting REAL employee count (sourced from LinkedIn).
-// Costs credits. Always try this before name-based search.
+// Costs 1 credit. Returns real employee count from LinkedIn.
+// Most accurate source. Call this FIRST when you have a domain.
 
-export async function enrichOrganizationByDomain(
-  domain: string,
-): Promise<ApolloOrg | null> {
+export async function enrichOrganizationByDomain(domain: string): Promise<ApolloOrg | null> {
   const clean = domain
     .replace(/^https?:\/\/(www\.)?/, '')
     .replace(/\/.*$/, '')
     .toLowerCase()
     .trim()
 
-  if (!clean) return null
+  if (!clean || clean.length < 3) return null
 
   try {
-    const res = await apolloFetch(
-      `/organizations/enrich?domain=${encodeURIComponent(clean)}`,
-      { method: 'GET' },
-    )
+    const res = await apolloFetch(`/organizations/enrich?domain=${encodeURIComponent(clean)}`, {
+      method: 'GET',
+    })
     const data = await res.json()
     const o = data.organization
     if (!o) return null
 
-    return {
-      id: o.id ?? '',
-      name: o.name ?? '',
-      websiteUrl: o.website_url ?? null,
-      linkedinUrl: o.linkedin_url ?? null,
-      estimatedNumEmployees: o.estimated_num_employees ?? null,
-      industry: o.industry ?? null,
-      city: o.city ?? null,
-      country: o.country ?? null,
-      domain: o.primary_domain ?? o.domain ?? clean,
-    }
+    return mapOrg(o, clean)
   } catch (err) {
-    // 422 = domain not found, not a real error
-    if (err instanceof Error && err.message.includes('422')) return null
-    if (err instanceof Error && err.message.includes('validation')) return null
+    // 422/validation = domain not in Apollo — not a real error
+    if (err instanceof Error && (err.message.includes('422') || err.message.includes('validation'))) {
+      return null
+    }
     throw err
   }
 }
 
-// ─── 2. Organization Search by company name ────────────────────────────────────
-// Costs credits. Only use when we have no domain to try.
+// ─── 2. Organization Search by name ───────────────────────────────────────────
+// Costs 1 credit. Only use when we have NO domain.
 
 export async function searchOrganizationByName(
   companyName: string,
-  city?: string | null,
+  city?: string | null
 ): Promise<ApolloOrg | null> {
-  const body: Record<string, unknown> = {
-    q_organization_name: companyName,
-    organization_locations: ['Australia'],
-    per_page: 5,
-    page: 1,
-  }
-
   const res = await apolloFetch('/mixed_companies/search', {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      q_organization_name: companyName,
+      organization_locations: ['Australia'],
+      per_page: 5,
+      page: 1,
+    }),
   })
 
   const data = await res.json()
   const orgs: any[] = data.organizations ?? []
   if (!orgs.length) return null
 
-  // Best-match: name contains first word of query
-  const firstWord = companyName.toLowerCase().split(' ')[0]
-  const best =
-    orgs.find(o => o.name?.toLowerCase().includes(firstWord)) ?? orgs[0]
+  // Best match: name contains first word of query
+  const first = companyName.toLowerCase().split(' ')[0]
+  const best = orgs.find(o => o.name?.toLowerCase().includes(first)) ?? orgs[0]
 
+  return mapOrg(best, best.primary_domain ?? null)
+}
+
+function mapOrg(o: any, fallbackDomain: string | null): ApolloOrg {
   return {
-    id: best.id ?? '',
-    name: best.name ?? companyName,
-    websiteUrl: best.website_url ?? null,
-    linkedinUrl: best.linkedin_url ?? null,
-    estimatedNumEmployees: best.estimated_num_employees ?? null,
-    industry: best.industry ?? null,
-    city: best.city ?? null,
-    country: best.country ?? null,
-    domain: best.primary_domain ?? null,
+    id: o.id ?? '',
+    name: o.name ?? '',
+    websiteUrl: o.website_url ?? null,
+    linkedinUrl: o.linkedin_url ?? null,
+    estimatedNumEmployees: o.estimated_num_employees ?? null,
+    industry: o.industry ?? null,
+    city: o.city ?? null,
+    country: o.country ?? null,
+    domain: o.primary_domain ?? o.domain ?? fallbackDomain,
   }
 }
 
-// ─── 3. People API Search (FREE — zero credits) ───────────────────────────────
-// Returns person IDs and job titles. Does NOT return emails ever.
-// Must pass results to enrichPersonById() to get the email.
+// ─── 3. People Search (FREE — zero credits always) ────────────────────────────
+// Returns IDs + titles. Never returns emails — that requires enrichment.
+// Correct endpoint: /mixed_people/api_search  (NOT /mixed_people/search)
 
 export async function searchPeopleByTitles(params: {
   companyName: string
@@ -228,13 +236,12 @@ export async function searchPeopleByTitles(params: {
     include_similar_titles: true,
   }
 
-  // Domain is most reliable — takes precedence over org ID
+  // Domain is the most reliable company identifier
   if (params.domain) {
     body.q_organization_domains_list = [params.domain]
   } else if (params.organizationId) {
     body.organization_ids = [params.organizationId]
   } else {
-    // Last resort: name search (less accurate)
     body.q_organization_name = params.companyName
   }
 
@@ -257,15 +264,15 @@ export async function searchPeopleByTitles(params: {
     lastName: (p.last_name as string) ?? '',
     title: (p.title as string) ?? '',
     linkedinUrl: (p.linkedin_url as string) ?? null,
-    email: null,        // Never returned by this endpoint
+    email: null,           // NEVER returned by this endpoint
     emailStatus: null,
     orgName: (p.organization?.name as string) ?? params.companyName,
   }))
 }
 
-// ─── 4. People Enrichment by Apollo ID (costs 1 credit) ──────────────────────
-// This is the CORRECT way to get an email.
-// Pass the `id` from searchPeopleByTitles.
+// ─── 4. Enrich person by Apollo ID (costs 1 credit) ──────────────────────────
+// THE correct way to get an email. Pass the id from searchPeopleByTitles.
+// Endpoint: POST /people/match with { id: "..." } in body
 
 export async function enrichPersonById(personId: string): Promise<{
   email: string | null
@@ -279,11 +286,10 @@ export async function enrichPersonById(personId: string): Promise<{
       method: 'POST',
       body: JSON.stringify({
         id: personId,
-        reveal_personal_emails: false,  // true = personal email like gmail (more credits)
-        reveal_phone_number: false,
+        reveal_personal_emails: false,  // true = personal email (costs more)
+        reveal_phone_number: false,     // phone NOT on free tier
       }),
     })
-
     const data = await res.json()
     const p = data.person
     if (!p) return null
@@ -296,45 +302,11 @@ export async function enrichPersonById(personId: string): Promise<{
       title: (p.title as string) ?? null,
     }
   } catch {
-    return null  // Soft fail — proceed to Hunter
+    return null  // Soft fail — let Hunter try
   }
 }
 
-// ─── 5. People match by name + domain (costs 1 credit, no ID needed) ──────────
-// Useful when we have a name from Hunter and want Apollo enrichment.
-
-export async function enrichPersonByNameAndDomain(params: {
-  firstName: string
-  lastName: string
-  domain: string
-}): Promise<{ email: string | null; emailStatus: string | null } | null> {
-  try {
-    const qs = new URLSearchParams({
-      first_name: params.firstName,
-      last_name: params.lastName,
-      domain: params.domain,
-      reveal_personal_emails: 'false',
-      reveal_phone_number: 'false',
-    })
-    const res = await apolloFetch(`/people/match?${qs}`, {
-      method: 'POST',
-      body: '{}',
-    })
-
-    const data = await res.json()
-    const p = data.person
-    if (!p) return null
-
-    return {
-      email: (p.email as string) ?? null,
-      emailStatus: (p.email_status as string) ?? null,
-    }
-  } catch {
-    return null
-  }
-}
-
-// ─── Legacy shims (used by existing useEnrichment hook) ───────────────────────
+// ─── 5. Legacy shims (used by existing useEnrichment hook) ────────────────────
 
 export async function searchPeople(query: {
   name?: string
@@ -354,15 +326,13 @@ export async function searchPeople(query: {
   })
 
   const data = await res.json()
-  const people: any[] = data.people ?? []
-
-  return people.map(p => ({
+  return (data.people ?? []).map((p: any) => ({
     id: p.id,
     firstName: p.first_name,
     lastName: p.last_name,
     name: p.name ?? `${p.first_name} ${p.last_name}`,
     title: p.title,
-    email: null,    // Not returned by this endpoint
+    email: null,
     phone: null,
     linkedinUrl: p.linkedin_url ?? null,
     organization: p.organization
@@ -377,46 +347,33 @@ export async function searchPeople(query: {
   }))
 }
 
-export async function enrichPerson(
-  email: string,
-): Promise<ApolloEnrichedContact | null> {
+export async function enrichPerson(email: string): Promise<ApolloEnrichedContact | null> {
   try {
     const qs = new URLSearchParams({
       email,
       reveal_personal_emails: 'false',
       reveal_phone_number: 'false',
     })
-    const res = await apolloFetch(`/people/match?${qs}`, {
-      method: 'POST',
-      body: '{}',
-    })
+    const res = await apolloFetch(`/people/match?${qs}`, { method: 'POST', body: '{}' })
     const data = await res.json()
     const p = data.person
     if (!p) return null
 
     return {
-      id: p.id,
-      firstName: p.first_name,
-      lastName: p.last_name,
-      name: p.name,
-      title: p.title,
-      email: p.email ?? null,
-      phone: null,
+      id: p.id, firstName: p.first_name, lastName: p.last_name,
+      name: p.name, title: p.title,
+      email: p.email ?? null, phone: null,
       linkedinUrl: p.linkedin_url ?? null,
       emailStatus: p.email_status ?? null,
-      city: p.city ?? null,
-      country: p.country ?? null,
+      city: p.city ?? null, country: p.country ?? null,
       organization: p.organization
         ? {
-            id: p.organization.id,
-            name: p.organization.name,
+            id: p.organization.id, name: p.organization.name,
             websiteUrl: p.organization.website_url ?? null,
             linkedinUrl: p.organization.linkedin_url ?? null,
             estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
           }
         : null,
     }
-  } catch {
-    return null
-  }
+  } catch { return null }
 }

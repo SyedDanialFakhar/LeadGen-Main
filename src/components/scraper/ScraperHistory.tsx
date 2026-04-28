@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import {
   Calendar, Briefcase, MapPin, TrendingUp, Filter,
-  ChevronDown, ChevronUp, CheckCircle2, XCircle, Clock,
-  ExternalLink, ShieldX, RotateCcw, Sparkles,
+  CheckCircle2, XCircle, Clock, ExternalLink, RotateCcw,
+  ChevronDown, ChevronUp, Sparkles, Search,
 } from 'lucide-react'
 import { formatDateTime } from '@/utils/dateUtils'
 import type { ScraperHistoryItem, FilteredJobRecord } from '@/services/scraperHistoryService'
@@ -18,99 +18,225 @@ interface ScraperHistoryProps {
   onRestoreJobs?: (jobs: FilteredJobRecord[]) => Promise<void>
 }
 
-const C = {
-  dot:      'w-4 shrink-0',
-  date:     'w-36 shrink-0',
-  title:    'flex-1 min-w-0',
-  city:     'w-28 shrink-0',
-  found:    'w-16 shrink-0',
-  passed:   'w-16 shrink-0',
-  filtered: 'w-16 shrink-0',
-  rate:     'w-24 shrink-0',
-  time:     'w-14 shrink-0',
-  action:   'w-32 shrink-0 flex justify-end',
-}
-
 const CATEGORY_CONFIG: Record<string, { label: string; colour: string; icon: string }> = {
-  recruitment_agency:   { label: 'Recruitment Agency', colour: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',         icon: '🚫' },
-  recruitment_website:  { label: 'Agency Website',     colour: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',         icon: '🌐' },
-  no_agency_disclaimer: { label: 'Blocks Agencies',    colour: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300', icon: '⛔' },
-  hr_consulting:        { label: 'HR Consulting',      colour: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',     icon: '👥' },
-  law_firm:             { label: 'Law Firm',           colour: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300', icon: '⚖️' },
-  private_advertiser:   { label: 'Private Advertiser', colour: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',        icon: '🏢' },
-  non_sales:            { label: 'Non-Sales',          colour: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',         icon: '📂' },
-  missing_website:      { label: 'No Website',         colour: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300', icon: '⚠️' },
-  no_company_name:      { label: 'No Company Name',    colour: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400',        icon: '❓' },
-  recruitment_intro:    { label: 'Agency Description', colour: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',         icon: '📝' },
-  recruiter_profile:    { label: 'Recruiter Profile',  colour: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',         icon: '👤' },
-  recruiter_email:      { label: 'Recruiter Email',    colour: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300',         icon: '📧' },
-  external_recruiter:   { label: 'External Recruiter', colour: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',             icon: '🔗' },
+  recruitment_agency:   { label: 'Agency', colour: 'bg-rose-500', icon: '🚫' },
+  recruitment_website:  { label: 'Agency Site', colour: 'bg-rose-400', icon: '🌐' },
+  no_agency_disclaimer: { label: 'Blocks Agencies', colour: 'bg-orange-500', icon: '⛔' },
+  hr_consulting:        { label: 'HR Consulting', colour: 'bg-amber-500', icon: '👥' },
+  law_firm:             { label: 'Law Firm', colour: 'bg-purple-500', icon: '⚖️' },
+  private_advertiser:   { label: 'Private', colour: 'bg-slate-500', icon: '🏢' },
+  non_sales:            { label: 'Non-Sales', colour: 'bg-blue-500', icon: '📂' },
+  recruiter_profile:    { label: 'Recruiter', colour: 'bg-red-500', icon: '👤' },
+  recruiter_email:      { label: 'Recruiter Email', colour: 'bg-pink-500', icon: '📧' },
+  external_recruiter:   { label: 'External', colour: 'bg-red-600', icon: '🔗' },
 }
 
-const STATUS_DOT: Record<string, string> = {
-  completed: 'bg-emerald-500',
-  failed:    'bg-red-500',
-  running:   'bg-amber-500 animate-pulse',
+const STATUS_CONFIG: Record<string, { dot: string; bg: string; text: string }> = {
+  completed: { dot: 'bg-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400' },
+  failed: { dot: 'bg-red-500', bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-700 dark:text-red-400' },
+  running: { dot: 'bg-amber-500 animate-pulse', bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-400' },
 }
 
-function CategorySummary({ jobs }: { jobs: FilteredJobRecord[] }) {
-  const counts: Record<string, number> = {}
-  for (const j of jobs) counts[j.category] = (counts[j.category] || 0) + 1
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
-  if (!entries.length) return null
+function FilteredJobsPanel({ 
+  jobs, 
+  onRestoreJobs,
+  runId
+}: { 
+  jobs: FilteredJobRecord[]
+  onRestoreJobs?: (jobs: FilteredJobRecord[]) => Promise<void>
+  runId: string
+}) {
+  const [search, setSearch] = useState('')
+  const [selectedJobs, setSelectedJobs] = useState<Set<number>>(new Set())
+  const [restoring, setRestoring] = useState(false)
+
+  const visible = jobs.filter(j => {
+    if (!search.trim()) return true
+    const s = search.toLowerCase()
+    return j.companyName.toLowerCase().includes(s) || 
+           j.jobTitle.toLowerCase().includes(s) ||
+           j.reason.toLowerCase().includes(s)
+  })
+
+  const handleRestore = async () => {
+    if (!onRestoreJobs || selectedJobs.size === 0) return
+    setRestoring(true)
+    try {
+      const jobsToRestore = Array.from(selectedJobs).map(idx => jobs[idx])
+      await onRestoreJobs(jobsToRestore)
+      setSelectedJobs(new Set())
+    } catch (err) {
+      console.error('Restore failed:', err)
+    } finally {
+      setRestoring(false)
+    }
+  }
+
+  const toggleJob = (idx: number) => {
+    const newSet = new Set(selectedJobs)
+    if (newSet.has(idx)) newSet.delete(idx)
+    else newSet.add(idx)
+    setSelectedJobs(newSet)
+  }
+
+  const toggleAll = () => {
+    if (selectedJobs.size === visible.length) {
+      setSelectedJobs(new Set())
+    } else {
+      setSelectedJobs(new Set(visible.map((_, i) => jobs.indexOf(_))))
+    }
+  }
+
+  // Category summary
+  const categoryCounts: Record<string, number> = {}
+  jobs.forEach(j => {
+    categoryCounts[j.category] = (categoryCounts[j.category] || 0) + 1
+  })
+
   return (
-    <div className="flex flex-wrap gap-1.5 mb-3">
-      {entries.map(([cat, n]) => {
-        const cfg = CATEGORY_CONFIG[cat] ?? { label: cat, colour: 'bg-slate-100 text-slate-600', icon: '❓' }
-        return (
-          <span key={cat} className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold', cfg.colour)}>
-            {cfg.icon} {cfg.label}: {n}
+    <div className="border-t border-slate-200 dark:border-slate-700 bg-gradient-to-b from-slate-50/80 to-white dark:from-slate-900/40 dark:to-slate-900/20 p-4 space-y-3 animate-in slide-in-from-top-2 duration-300">
+      
+      {/* Header Controls */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-slate-500" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {jobs.length} Filtered Jobs
           </span>
-        )
-      })}
-    </div>
-  )
-}
-
-function FilteredJobRow({ job, onRestore }: { job: FilteredJobRecord; onRestore?: () => void }) {
-  const cfg = CATEGORY_CONFIG[job.category] ?? { label: job.category, colour: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', icon: '❓' }
-  
-  return (
-    <div className="flex items-start gap-3 py-2.5 px-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all duration-200 group rounded-lg">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{job.companyName}</span>
-          <span className="text-xs text-slate-400 dark:text-slate-500 truncate max-w-[180px]">— {job.jobTitle}</span>
-          {job.jobLink && (
-            <a href={job.jobLink} target="_blank" rel="noopener noreferrer"
-              className="opacity-0 group-hover:opacity-100 transition-opacity" title="View job">
-              <ExternalLink className="w-3 h-3 text-blue-500 hover:text-blue-700" />
-            </a>
+          {selectedJobs.size > 0 && (
+            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full text-xs font-semibold">
+              {selectedJobs.size} selected
+            </span>
           )}
         </div>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">{job.reason}</p>
-      </div>
-      <div className="shrink-0 flex flex-col items-end gap-1.5">
-        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap', cfg.colour)}>
-          {cfg.icon} {cfg.label}
-        </span>
+
         <div className="flex items-center gap-2">
-          <div className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden" title={`Confidence: ${job.confidence}%`}>
-            <div
-              className={cn('h-full rounded-full', job.confidence >= 90 ? 'bg-red-500' : job.confidence >= 70 ? 'bg-amber-500' : 'bg-yellow-400')}
-              style={{ width: `${job.confidence}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-slate-400 tabular-nums">{job.confidence}%</span>
-          {onRestore && (
-            <button
-              onClick={onRestore}
-              className="opacity-0 group-hover:opacity-100 transition-all p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-              title="Restore this job to leads"
+          {selectedJobs.size > 0 && onRestoreJobs && (
+            <Button
+              size="sm"
+              onClick={handleRestore}
+              isLoading={restoring}
+              leftIcon={<Sparkles className="w-3.5 h-3.5" />}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md"
             >
-              <RotateCcw className="w-3 h-3" />
-            </button>
+              Restore {selectedJobs.size} to Leads
+            </Button>
           )}
+          
+          {jobs.length > 5 && (
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search..."
+                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Category Summary */}
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(categoryCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([cat, count]) => {
+            const cfg = CATEGORY_CONFIG[cat] ?? { label: cat, colour: 'bg-slate-500', icon: '❓' }
+            return (
+              <span key={cat} className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold text-white shadow-sm', cfg.colour)}>
+                {cfg.icon} {cfg.label} <span className="opacity-80">({count})</span>
+              </span>
+            )
+          })}
+      </div>
+
+      {/* Jobs Table */}
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
+        <div className="max-h-80 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10">
+              <tr className="border-b border-slate-200 dark:border-slate-700">
+                <th className="px-3 py-2 text-left w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedJobs.size === visible.length && visible.length > 0}
+                    onChange={toggleAll}
+                    className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-400">Company</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-400">Job Title</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-400">Reason</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-400">Category</th>
+                <th className="px-3 py-2 text-center font-semibold text-slate-600 dark:text-slate-400 w-20">Confidence</th>
+                <th className="px-3 py-2 text-center font-semibold text-slate-600 dark:text-slate-400 w-16">Link</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+              {visible.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
+                    {search ? `No matches for "${search}"` : 'No filtered jobs'}
+                  </td>
+                </tr>
+              ) : (
+                visible.map((job, i) => {
+                  const originalIdx = jobs.indexOf(job)
+                  const cfg = CATEGORY_CONFIG[job.category] ?? { label: job.category, colour: 'bg-slate-500', icon: '❓' }
+                  return (
+                    <tr key={i} className="hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-colors group">
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedJobs.has(originalIdx)}
+                          onChange={() => toggleJob(originalIdx)}
+                          className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-200">{job.companyName}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 max-w-xs truncate">{job.jobTitle}</td>
+                      <td className="px-3 py-2 text-slate-500 dark:text-slate-400 max-w-md truncate">{job.reason}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white', cfg.colour)}>
+                          {cfg.icon} {cfg.label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                            <div
+                              className={cn('h-full rounded-full', 
+                                job.confidence >= 90 ? 'bg-red-500' : 
+                                job.confidence >= 70 ? 'bg-amber-500' : 'bg-yellow-400'
+                              )}
+                              style={{ width: `${job.confidence}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500 tabular-nums w-8 text-right">{job.confidence}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {job.jobLink ? (
+                          <a
+                            href={job.jobLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -119,12 +245,10 @@ function FilteredJobRow({ job, onRestore }: { job: FilteredJobRecord; onRestore?
 
 function HistoryRow({ run, onRestoreJobs }: { run: ScraperHistoryItem; onRestoreJobs?: (jobs: FilteredJobRecord[]) => Promise<void> }) {
   const [expanded, setExpanded] = useState(false)
-  const [search, setSearch] = useState('')
-  const [restoring, setRestoring] = useState(false)
-  const [selectedJobs, setSelectedJobs] = useState<Set<number>>(new Set())
-
+  
   const filteredJobs = run.filtered_jobs ?? []
   const passRate = run.jobs_found > 0 ? Math.round((run.jobs_passed / run.jobs_found) * 100) : 0
+  
   const durationMs = run.completed_at
     ? new Date(run.completed_at).getTime() - new Date(run.created_at).getTime()
     : null
@@ -132,208 +256,138 @@ function HistoryRow({ run, onRestoreJobs }: { run: ScraperHistoryItem; onRestore
     : durationMs < 60000 ? `${Math.floor(durationMs / 1000)}s`
     : `${Math.floor(durationMs / 60000)}m ${Math.floor((durationMs % 60000) / 1000)}s`
 
-  const visible = filteredJobs.filter(j => {
-    if (!search.trim()) return true
-    const s = search.toLowerCase()
-    return j.companyName.toLowerCase().includes(s) || j.jobTitle.toLowerCase().includes(s) ||
-      j.reason.toLowerCase().includes(s) || j.category.toLowerCase().includes(s)
-  })
-
-  const handleRestoreSelected = async () => {
-    if (!onRestoreJobs || selectedJobs.size === 0) return
-    setRestoring(true)
-    try {
-      const jobsToRestore = Array.from(selectedJobs).map(idx => filteredJobs[idx])
-      await onRestoreJobs(jobsToRestore)
-      setSelectedJobs(new Set())
-      setExpanded(false)
-    } catch (err) {
-      console.error('Failed to restore jobs:', err)
-    } finally {
-      setRestoring(false)
-    }
-  }
-
-  const handleRestoreJob = async (index: number) => {
-    if (!onRestoreJobs) return
-    setRestoring(true)
-    try {
-      await onRestoreJobs([filteredJobs[index]])
-    } catch (err) {
-      console.error('Failed to restore job:', err)
-    } finally {
-      setRestoring(false)
-    }
-  }
-
-  const toggleJobSelection = (index: number) => {
-    const newSet = new Set(selectedJobs)
-    if (newSet.has(index)) {
-      newSet.delete(index)
-    } else {
-      newSet.add(index)
-    }
-    setSelectedJobs(newSet)
-  }
+  const statusCfg = STATUS_CONFIG[run.status] || STATUS_CONFIG.completed
 
   return (
-    <div className="border border-slate-200 dark:border-slate-700/60 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
       
-      {/* Data row */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 hover:bg-slate-50/60 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"
-        onClick={() => setExpanded(!expanded)}>
-
-        <div className={cn(C.dot, 'flex items-center justify-center')}>
-          <div className={cn('w-2 h-2 rounded-full', STATUS_DOT[run.status] ?? 'bg-slate-400')} />
+      {/* Main Row */}
+      <div 
+        className="flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+        onClick={() => filteredJobs.length > 0 && setExpanded(!expanded)}
+      >
+        {/* Status Indicator */}
+        <div className="shrink-0">
+          <div className={cn('w-2.5 h-2.5 rounded-full', statusCfg.dot)} />
         </div>
 
-        <div className={cn(C.date, 'text-xs text-slate-500 dark:text-slate-400 tabular-nums')}>
-          {formatDateTime(run.created_at)}
-        </div>
-
-        <div className={cn(C.title, 'flex items-center gap-1.5')}>
-          <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
-          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{run.job_title}</span>
-        </div>
-
-        <div className={cn(C.city, 'flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400')}>
-          <MapPin className="w-3 h-3 shrink-0" />
-          <span className="truncate">{run.city === 'Australia' ? 'All AU' : run.city}</span>
-        </div>
-
-        <div className={cn(C.found, 'flex items-center gap-1')}>
-          <TrendingUp className="w-3 h-3 text-slate-400" />
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-300 tabular-nums">{run.jobs_found}</span>
-        </div>
-
-        <div className={cn(C.passed, 'flex items-center gap-1')}>
-          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{run.jobs_passed}</span>
-        </div>
-
-        <div className={cn(C.filtered, 'flex items-center gap-1')}>
-          <XCircle className="w-3 h-3 text-red-400" />
-          <span className="text-xs font-semibold text-red-600 dark:text-red-400 tabular-nums">{run.jobs_filtered}</span>
-        </div>
-
-        <div className={C.rate}>
-          <div className="flex items-center gap-1.5">
-            <div className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-              <div
-                className={cn('h-full rounded-full transition-all', passRate >= 60 ? 'bg-emerald-500' : passRate >= 30 ? 'bg-amber-400' : 'bg-red-500')}
-                style={{ width: `${passRate}%` }}
-              />
-            </div>
-            <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 w-7 text-right">{passRate}%</span>
+        {/* Date & Time */}
+        <div className="shrink-0 w-36">
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <Calendar className="w-3.5 h-3.5" />
+            <span className="font-medium tabular-nums">{formatDateTime(run.created_at)}</span>
           </div>
         </div>
 
-        <div className={cn(C.time, 'flex items-center gap-1 justify-end')}>
-          <Clock className="w-3 h-3 text-slate-400" />
-          <span className="text-xs text-slate-400 tabular-nums">{durationText}</span>
+        {/* Job Title */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">{run.job_title}</span>
+          </div>
         </div>
 
-        <div className={C.action} onClick={(e) => e.stopPropagation()}>
+        {/* Location */}
+        <div className="shrink-0 w-28">
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <MapPin className="w-3.5 h-3.5" />
+            <span className="truncate">{run.city === 'Australia' ? 'All AU' : run.city}</span>
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div className="shrink-0 flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 tabular-nums">{run.jobs_found}</span>
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{run.jobs_passed}</span>
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            <XCircle className="w-3.5 h-3.5 text-red-400" />
+            <span className="text-sm font-bold text-red-600 dark:text-red-400 tabular-nums">{run.jobs_filtered}</span>
+          </div>
+        </div>
+
+        {/* Pass Rate */}
+        <div className="shrink-0 w-24">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all', 
+                  passRate >= 60 ? 'bg-emerald-500' : 
+                  passRate >= 30 ? 'bg-amber-400' : 'bg-red-500'
+                )}
+                style={{ width: `${passRate}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 tabular-nums w-9 text-right">{passRate}%</span>
+          </div>
+        </div>
+
+        {/* Duration */}
+        <div className="shrink-0 w-16">
+          <div className="flex items-center gap-1 justify-end text-xs text-slate-500 dark:text-slate-400">
+            <Clock className="w-3.5 h-3.5" />
+            <span className="font-medium tabular-nums">{durationText}</span>
+          </div>
+        </div>
+
+        {/* Expand Button */}
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
           {filteredJobs.length > 0 ? (
             <button
               onClick={() => setExpanded(!expanded)}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap',
-                expanded
-                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-                  : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 ring-1 ring-red-200 dark:ring-red-800'
-              )}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 ring-1 ring-red-200 dark:ring-red-800"
             >
-              <ShieldX className="w-3 h-3" />
               {filteredJobs.length} filtered
-              {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           ) : (
-            <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+            <span className="text-xs text-slate-300 dark:text-slate-600 px-3">—</span>
           )}
         </div>
       </div>
 
-      {/* Expanded panel */}
+      {/* Expanded Panel */}
       {expanded && filteredJobs.length > 0 && (
-        <div className="border-t border-slate-100 dark:border-slate-700/60 bg-gradient-to-b from-slate-50/60 to-white dark:from-slate-900/30 dark:to-slate-900/10 px-4 py-3">
-          <div className="flex items-center justify-between mb-2.5">
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5" />
-              Filtered-out jobs ({filteredJobs.length})
-            </p>
-            <div className="flex items-center gap-2">
-              {selectedJobs.size > 0 && onRestoreJobs && (
-                <Button
-                  size="sm"
-                  onClick={handleRestoreSelected}
-                  isLoading={restoring}
-                  leftIcon={<Sparkles className="w-3 h-3" />}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  Restore {selectedJobs.size} to Leads
-                </Button>
-              )}
-              {filteredJobs.length > 6 && (
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 w-40"
-                />
-              )}
-            </div>
-          </div>
-          
-          <CategorySummary jobs={filteredJobs} />
-          
-          <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800 divide-y divide-slate-50 dark:divide-slate-700/40">
-            {visible.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-5">No matches for "{search}"</p>
-            ) : (
-              visible.map((job, i) => {
-                const originalIndex = filteredJobs.indexOf(job)
-                return (
-                  <div key={i} className="flex items-start gap-2 pr-2">
-                    {onRestoreJobs && (
-                      <div className="flex items-center justify-center px-2 py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedJobs.has(originalIndex)}
-                          onChange={() => toggleJobSelection(originalIndex)}
-                          className="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        />
-                      </div>
-                    )}
-                    <FilteredJobRow
-                      job={job}
-                      onRestore={onRestoreJobs ? () => handleRestoreJob(originalIndex) : undefined}
-                    />
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
+        <FilteredJobsPanel 
+          jobs={filteredJobs} 
+          onRestoreJobs={onRestoreJobs}
+          runId={run.id}
+        />
       )}
     </div>
   )
 }
 
 export function ScraperHistory({ history, isLoading, onRestoreJobs }: ScraperHistoryProps) {
-  if (isLoading) return <Card><CardBody><div className="flex justify-center py-10"><Spinner /></div></CardBody></Card>
+  if (isLoading) {
+    return (
+      <Card>
+        <CardBody>
+          <div className="flex justify-center py-10">
+            <Spinner />
+          </div>
+        </CardBody>
+      </Card>
+    )
+  }
 
   if (!history.length) {
     return (
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-              <Calendar className="w-5 h-5 text-slate-400" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center mx-auto mb-4 shadow-sm">
+              <Calendar className="w-6 h-6 text-slate-400" />
             </div>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">No history yet</p>
-            <p className="text-xs text-slate-400 mt-1">Run your first scrape to see results here</p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No scraping history yet</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Your scraping runs will appear here</p>
           </div>
         </CardBody>
       </Card>
@@ -345,50 +399,45 @@ export function ScraperHistory({ history, isLoading, onRestoreJobs }: ScraperHis
   const totalFiltered = history.reduce((s, r) => s + (r.jobs_filtered || 0), 0)
 
   return (
-    <Card className="shadow-md">
-      <CardHeader className="bg-gradient-to-r from-slate-50 to-white dark:from-slate-800/50 dark:to-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+    <Card className="shadow-lg border-slate-200 dark:border-slate-700">
+      
+      {/* Header */}
+      <CardHeader className="bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-slate-700">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-blue-500" />
+            <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-md">
+                <Calendar className="w-4 h-4 text-white" />
+              </div>
               Scraping History
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {history.length} run{history.length !== 1 ? 's' : ''} — click filtered count to inspect or restore jobs
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {history.length} run{history.length !== 1 ? 's' : ''} • Click filtered count to inspect and restore jobs
             </p>
           </div>
-          <div className="flex items-center gap-6 text-xs">
+
+          {/* Summary Stats */}
+          <div className="flex items-center gap-8">
             {[
-              { label: 'Total Found', value: totalFound,    colour: 'text-slate-700 dark:text-slate-200' },
-              { label: 'Passed',      value: totalPassed,   colour: 'text-emerald-600' },
-              { label: 'Filtered',    value: totalFiltered, colour: 'text-red-500' },
-            ].map(s => (
-              <div key={s.label} className="text-center">
-                <p className={cn('text-xl font-black tabular-nums', s.colour)}>{s.value}</p>
-                <p className="text-slate-500">{s.label}</p>
+              { label: 'Total Found', value: totalFound, color: 'text-slate-700 dark:text-slate-200' },
+              { label: 'Passed', value: totalPassed, color: 'text-emerald-600 dark:text-emerald-400' },
+              { label: 'Filtered', value: totalFiltered, color: 'text-red-600 dark:text-red-400' },
+            ].map(stat => (
+              <div key={stat.label} className="text-center">
+                <p className={cn('text-2xl font-black tabular-nums', stat.color)}>{stat.value}</p>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">{stat.label}</p>
               </div>
             ))}
           </div>
         </div>
       </CardHeader>
 
-      <CardBody className="p-0">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700/60 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          <div className={C.dot} />
-          <div className={C.date}>Date & Time</div>
-          <div className={C.title}>Job Title</div>
-          <div className={C.city}>Location</div>
-          <div className={C.found}>Found</div>
-          <div className={C.passed}>Passed</div>
-          <div className={C.filtered}>Filtered</div>
-          <div className={C.rate}>Pass Rate</div>
-          <div className={cn(C.time, 'text-right')}>Time</div>
-          <div className={C.action} />
-        </div>
-
-        <div className="p-3 space-y-2">
-          {history.map(run => <HistoryRow key={run.id} run={run} onRestoreJobs={onRestoreJobs} />)}
+      {/* Body */}
+      <CardBody className="p-4">
+        <div className="space-y-3">
+          {history.map(run => (
+            <HistoryRow key={run.id} run={run} onRestoreJobs={onRestoreJobs} />
+          ))}
         </div>
       </CardBody>
     </Card>
