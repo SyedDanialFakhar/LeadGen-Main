@@ -144,37 +144,36 @@ export async function bulkUpdateResponse(ids: string[], response: 'positive' | '
 export async function getLeadStats(): Promise<LeadStats> {
   const { data, error } = await supabase
     .from('leads')
-    .select('status, enrichment_status, follow_up_required, created_at, response, ops_comments')
+    .select('status, response, created_at, enrichment_status, follow_up_required, ops_comments')
   
   if (error) throw new Error(`Failed to fetch stats: ${error.message}`)
 
   const today = getTodayISO()
   const leads = data ?? []
 
-  const hasNoResponse = (l: any): boolean => {
-    const resp = l.response?.toLowerCase()
-    return !resp || resp === 'none' || resp === ''
-  }
-
+  // ── YOUR CUSTOM LOGIC ─────────────────────────────────────
   const isConverted = (l: any): boolean => {
-    const resp = l.response?.toLowerCase()
-    if (resp === 'positive') return true
-    // Fallback: check ops_comments for [Response: positive]
-    if (l.ops_comments) {
-      return /\[Response:\s*positive\]/i.test(l.ops_comments)
-    }
-    return false
+    const response = l.response?.toLowerCase().trim()
+    return response === 'positive'
   }
 
   const isClosed = (l: any): boolean => {
-    const resp = l.response?.toLowerCase()
-    if (resp === 'negative') return true
-    if (l.status === 'Closed' || l.status === 'Sequence Closed') return true
-    
-    // Fallback from comments
-    if (l.ops_comments && /\[Response:\s*negative\]/i.test(l.ops_comments)) {
+    const response = l.response?.toLowerCase().trim()
+    const status = l.status
+
+    // Sequence Closed always counts as Closed
+    if (status === 'Sequence Closed') {
       return true
     }
+    if (response === 'negative') {
+      return true
+    }
+
+    // Closed status + Negative response = Closed
+    if (status === 'Closed' && response === 'negative') {
+      return true
+    }
+
     return false
   }
 

@@ -256,21 +256,24 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
 
   // ── Email status ─────────────────────────────────────────────────────────
 
-  const handleEmailStatusChange = (lead: Lead, newStatus: LeadStatus) => {
-    const updates: Partial<Lead> = { status: newStatus }
-    if (newStatus === 'Email 1' || newStatus === 'Email 2' || newStatus === 'Email 3') {
-      const now = new Date().toISOString()
-      updates.lastActionDate = now
-      updates.nextActionDate = calculateNextActionDate(now)
-      updates.nextActionDays = 5
-    }
-    if (newStatus === 'Closed' || newStatus === 'Sequence Closed') {
-      updates.nextActionDate = null
-      updates.nextActionDays = null
-    }
-    updateLead({ id: lead.id, updates })
-  }
+// ── Email status ─────────────────────────────────────────────────────────
 
+// ── Email status ─────────────────────────────────────────────────────────
+
+const handleEmailStatusChange = (lead: Lead, newStatus: LeadStatus) => {
+  const updates: Partial<Lead> = { status: newStatus }
+  if (newStatus === 'Email 1' || newStatus === 'Email 2' || newStatus === 'Email 3') {
+    const now = new Date().toISOString()
+    updates.lastActionDate = now
+    updates.nextActionDate = calculateNextActionDate(now)
+    updates.nextActionDays = 5
+  }
+  if (newStatus === 'Closed' || newStatus === 'Sequence Closed') {
+    updates.nextActionDate = null
+    updates.nextActionDays = null
+  }
+  updateLead({ id: lead.id, updates })
+}
   // ── Enrichment ────────────────────────────────────────────────────────────
 
   const handleEnrichSelected = async () => {
@@ -778,7 +781,7 @@ export function LeadTable({ leads, isLoading, onRowClick }: LeadTableProps) {
                           id: lead.id, 
                           updates: { 
                             opsComments: text.trim() || null,
-                            response: r === 'none' ? null : r     // ← Add this line
+                            response: r === 'none' ? null : r     // ← This line is important
                           } 
                         })
                       }}

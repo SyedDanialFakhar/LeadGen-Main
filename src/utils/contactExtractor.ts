@@ -501,21 +501,32 @@ const AGENCY_BODY_SIGNALS: string[] = [
 ]
 
 const AGENCY_TRAILING_SIGNALS: string[] = [
-  "refer them to us and we'll give you", "refer them to us and we will give you",
-  'refer a friend and receive', 'referral fee of $', 'referral bonus of $',
-  '$500 if we find them a new role', '$500 referral', 'referral reward',
-  "we'll give you $", 'refer your friends and earn',
-  'know someone looking for a job? refer', 'if you know someone looking for a job',
-  'we specialise in recruitment for the',
-  'actively source for a broad range of established clients',
-  'register your details with us', 'register your resume with us',
-  'add your resume to our database', 'we have a database of',
-  'only shortlisted candidates will be contacted',
-  'only successful candidates will be contacted',
-  'please note: only shortlisted',
-  '#choose fuse', '#choose people2people', '#choose hays',
-  '#choose randstad', '#choose robert half',
-]
+  // Referral bonuses (very strong agency signal)
+  "refer them to us and we'll give you",
+  "refer them to us and we will give you",
+  "refer a friend and receive",
+  "referral fee of $",
+  "referral bonus of $",
+  "$500 if we find them a new role",
+  "we'll give you $",
+
+  // Agency branding / hashtags
+  "#choose fuse",
+  "#choose people2people",
+  "#choose hays",
+  "#choose randstad",
+
+  // Talent pool / database language (strong agency signal)
+  "register your resume with us",
+  "add your resume to our database",
+  "submit your resume to our talent pool",
+  "join our talent community",
+
+  // Self-promotion as recruiter
+  "we specialise in recruitment for the",
+  "as a specialist recruiter",
+  "our recruitment consultants",
+];
 
 export function checkRecruitmentAgency(
   companyName: string,
