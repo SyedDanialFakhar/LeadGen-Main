@@ -35,6 +35,7 @@ interface JobTableProps {
   onSelectJob?: (jobId: string) => void
   onSelectAll?: () => void
   allSelected?: boolean
+  filterOlderThan7Days?: boolean
 }
 
 type AgeFilterType = 'all' | 'today' | 'week' | 'month' | 'older' | 'custom'
@@ -58,7 +59,7 @@ const formatDaysAgo = (datePostedRaw: string): { text: string; color: string; da
   else if (diffDays === 1) { text = 'Yesterday'; color = 'text-emerald-600 dark:text-emerald-400' }
   else if (diffDays < 7) { text = `${diffDays} days ago`; color = 'text-emerald-600 dark:text-emerald-400' }
   else if (diffDays < 14) { text = `${diffDays} days ago`; color = 'text-yellow-600 dark:text-yellow-400' }
-  else if (diffDays < 21) { text = '2 weeks ago'; color = 'text-orange-600 dark:text-orange-400' }
+  else if (diffDays < 21) { text = '2 weeks ago'; color: 'text-orange-600 dark:text-orange-400' }
   else if (diffDays < 30) { text = '3 weeks ago'; color = 'text-orange-600 dark:text-orange-400' }
   else if (diffDays < 60) { text = '1 month ago'; color = 'text-red-600 dark:text-red-400' }
   else if (diffDays < 90) { text = '2 months ago'; color = 'text-red-600 dark:text-red-400' }
@@ -68,11 +69,9 @@ const formatDaysAgo = (datePostedRaw: string): { text: string; color: string; da
 }
 
 // ─── Helper: Format work type ─────────────────────────────────────────────────
-// FIX: Apify returns values like "Full time", "Contract/Temp", "Part time"
-// with various capitalizations and formats — normalize all of them.
 const formatWorkType = (workType: string | null | undefined): string => {
   if (!workType) return '—'
-  const t = workType.toLowerCase().replace(/[^a-z]/g, '') // strip spaces, slashes etc.
+  const t = workType.toLowerCase().replace(/[^a-z]/g, '')
   if (t === 'fulltime' || t === 'full' || t === 'ft') return 'Full Time'
   if (t === 'parttime' || t === 'part' || t === 'pt') return 'Part Time'
   if (t === 'contracttemp' || t === 'contract' || t === 'temp' || t === 'temporary') return 'Contract'
@@ -80,7 +79,6 @@ const formatWorkType = (workType: string | null | undefined): string => {
   if (t === 'hybrid') return 'Hybrid'
   if (t === 'remote') return 'Remote'
   if (t === 'onsite' || t === 'onsiteinoffice') return 'On-site'
-  // Fallback: capitalize each word in original string
   return workType
     .split(/[\s/]+/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -88,11 +86,8 @@ const formatWorkType = (workType: string | null | undefined): string => {
 }
 
 // ─── Helper: Format company size ──────────────────────────────────────────────
-// Apify returns sizes like "51-200 employees", "1-50", "201-500 Employees"
-// Normalize to clean readable format.
 const formatCompanySize = (size: string | null | undefined): string | null => {
   if (!size) return null
-  // Already clean (e.g. "51-200 employees") — just ensure consistent capitalisation
   const cleaned = size.replace(/employees/i, '').trim()
   if (!cleaned || cleaned === 'N/A') return null
   return `${cleaned} employees`
@@ -108,6 +103,7 @@ export function JobTable({
   onSelectJob,
   onSelectAll,
   allSelected = false,
+  filterOlderThan7Days = true,
 }: JobTableProps) {
   const [ageFilter, setAgeFilter] = useState<AgeFilterType>('all')
   const [customDays, setCustomDays] = useState<number>(30)
@@ -124,13 +120,34 @@ export function JobTable({
     return Math.floor((referenceDate.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ✨ ENHANCED FILTERING — Now includes 7+ days filter
+  // ═══════════════════════════════════════════════════════════════════════════
   const filteredJobs = useMemo(() => {
-    if (ageFilter === 'all' && !customDateRange.from && !customDateRange.to) return jobs
+    let result = jobs
+
+    // FIRST: Apply 7+ days filter if enabled
+    if (filterOlderThan7Days) {
+      result = result.filter((job) => {
+        if (!job.datePostedRaw) return false
+        const jobDate = new Date(job.datePostedRaw)
+        jobDate.setHours(0, 0, 0, 0)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const daysOld = getDaysBetween(jobDate, today)
+        return daysOld >= 7
+      })
+    }
+
+    // SECOND: Apply additional age filters if set
+    if (ageFilter === 'all' && !customDateRange.from && !customDateRange.to) {
+      return result
+    }
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    return jobs.filter((job) => {
+    return result.filter((job) => {
       if (!job.datePostedRaw) return false
       const jobDate = new Date(job.datePostedRaw)
       jobDate.setHours(0, 0, 0, 0)
@@ -156,7 +173,7 @@ export function JobTable({
         default: return true
       }
     })
-  }, [jobs, ageFilter, customDays, customDateRange])
+  }, [jobs, ageFilter, customDays, customDateRange, filterOlderThan7Days])
 
   const handleFilterChange = (newFilter: AgeFilterType) => {
     setAgeFilter(newFilter)
@@ -172,12 +189,12 @@ export function JobTable({
   const hasActiveFilters = ageFilter !== 'all' || !!customDateRange.from || !!customDateRange.to
   const filteredTotal = filteredJobs.length
   const currentFilteredJobs = filteredJobs.slice(0, itemsPerPage)
-  const displayJobs = hasActiveFilters ? currentFilteredJobs : jobs.slice(startIndex, startIndex + itemsPerPage)
-  const displayTotal = hasActiveFilters ? filteredTotal : totalJobs
+  const displayJobs = hasActiveFilters ? currentFilteredJobs : filteredJobs.slice(startIndex, startIndex + itemsPerPage)
+  const displayTotal = filteredTotal
   const displayStartIndex = hasActiveFilters ? 1 : startIndex + 1
   const displayEndIndex = hasActiveFilters
     ? Math.min(itemsPerPage, filteredTotal)
-    : Math.min(startIndex + itemsPerPage, totalJobs)
+    : Math.min(startIndex + itemsPerPage, filteredTotal)
 
   const openJobLink = (url: string) => {
     if (url && url !== '#' && url !== '') window.open(url, '_blank', 'noopener,noreferrer')
@@ -193,32 +210,61 @@ export function JobTable({
     )
   }
 
+  // Calculate how many jobs were filtered by the 7+ days rule
+  const filteredBy7Days = filterOlderThan7Days ? jobs.length - filteredJobs.length : 0
+
   return (
     <div className="space-y-4">
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* ✨ 7+ DAYS FILTER STATUS BANNER                             */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {filterOlderThan7Days && filteredBy7Days > 0 && (
+        <div className="relative overflow-hidden rounded-xl border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 via-white to-pink-50 dark:from-purple-900/20 dark:via-slate-800 dark:to-pink-900/20 shadow-lg">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-pink-500/5 to-purple-500/5" />
+          <div className="relative px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-purple-900 dark:text-purple-100">
+                7+ Days Filter Active
+              </p>
+              <p className="text-xs text-purple-700 dark:text-purple-300 mt-0.5">
+                Filtered out {filteredBy7Days} fresh job{filteredBy7Days !== 1 ? 's' : ''} (posted within last 7 days) — 
+                showing {filteredJobs.length} seasoned opportunities
+              </p>
+            </div>
+            <div className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold shadow-md">
+              {filteredJobs.length} shown
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Age Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+      <div className="flex flex-wrap items-center gap-3 p-3 bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-800/50 dark:via-slate-800/30 dark:to-slate-800/50 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-md">
         <button
           onClick={() => setShowAgeFilter(!showAgeFilter)}
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+            'flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-all hover:scale-105',
             showAgeFilter || hasActiveFilters
-              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-slate-200 dark:border-slate-600'
           )}
         >
           <Filter className="w-4 h-4" />
-          <span>Filter by Age</span>
+          <span>Additional Filters</span>
           <ChevronDown className={cn('w-3 h-3 transition-transform', showAgeFilter && 'rotate-180')} />
         </button>
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="w-3 h-3" />}>
-            Clear Filters
+            Clear Additional Filters
           </Button>
         )}
 
         {hasActiveFilters && (
-          <span className="text-xs text-slate-500 ml-auto">
+          <span className="text-xs text-slate-500 ml-auto font-medium">
             Showing {displayJobs.length} of {displayTotal} jobs
           </span>
         )}
@@ -226,10 +272,10 @@ export function JobTable({
 
       {/* Expanded Filter Panel */}
       {showAgeFilter && (
-        <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 space-y-4">
+        <div className="p-4 bg-gradient-to-br from-white via-slate-50 to-white dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700 space-y-4 shadow-lg">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Quick Filters</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Quick Filters</label>
               <div className="flex flex-wrap gap-2">
                 {[
                   { v: 'all', label: 'All Jobs', color: 'blue' },
@@ -242,10 +288,10 @@ export function JobTable({
                     key={v}
                     onClick={() => handleFilterChange(v as AgeFilterType)}
                     className={cn(
-                      'px-3 py-1.5 text-xs rounded-full transition-colors',
+                      'px-3 py-2 text-xs rounded-xl transition-all font-semibold border-2 hover:scale-105',
                       ageFilter === v
-                        ? `bg-${color}-600 text-white`
-                        : `bg-${color}-100 dark:bg-${color}-900/30 text-${color}-700 dark:text-${color}-300 hover:bg-${color}-200`
+                        ? `bg-gradient-to-r from-${color}-500 to-${color}-600 border-${color}-400 text-white shadow-lg`
+                        : `bg-white dark:bg-slate-800 border-${color}-200 dark:border-${color}-900 text-${color}-700 dark:text-${color}-300 hover:border-${color}-300`
                     )}
                   >
                     {label}
@@ -255,16 +301,16 @@ export function JobTable({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Custom Days Old</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Custom Days Old</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min="0"
                   value={customDays}
                   onChange={(e) => setCustomDays(parseInt(e.target.value) || 0)}
-                  className="w-24 px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 text-sm rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <span className="text-sm text-slate-500">days or older</span>
+                <span className="text-sm text-slate-500 font-medium">days or older</span>
                 <Button variant="outline" size="sm" onClick={() => handleFilterChange('custom')} disabled={ageFilter === 'custom'}>
                   Apply
                 </Button>
@@ -272,7 +318,7 @@ export function JobTable({
             </div>
 
             <div className="space-y-2 col-span-1 md:col-span-2">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider">Date Range</label>
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Date Range</label>
               <div className="flex flex-wrap gap-3">
                 <div className="flex items-center gap-2">
                   <CalendarIcon className="w-4 h-4 text-slate-400" />
@@ -280,14 +326,14 @@ export function JobTable({
                     type="date"
                     value={customDateRange.from}
                     onChange={(e) => { setCustomDateRange((p) => ({ ...p, from: e.target.value })); setAgeFilter('all') }}
-                    className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 text-sm rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-slate-500">to</span>
+                  <span className="text-sm text-slate-500 font-medium">to</span>
                   <input
                     type="date"
                     value={customDateRange.to}
                     onChange={(e) => { setCustomDateRange((p) => ({ ...p, to: e.target.value })); setAgeFilter('all') }}
-                    className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 text-sm rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -297,16 +343,20 @@ export function JobTable({
       )}
 
       {/* Results count */}
-      <div className="text-sm text-slate-500 dark:text-slate-400">
+      <div className="text-sm text-slate-600 dark:text-slate-400 font-medium flex items-center gap-2">
         Showing {displayStartIndex}–{displayEndIndex} of {displayTotal} jobs
-        {hasActiveFilters && <span className="ml-2 text-blue-600">(filtered from {totalJobs} total)</span>}
+        {(hasActiveFilters || filterOlderThan7Days) && (
+          <span className="ml-2 px-2 py-0.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full text-xs font-bold shadow-md">
+            filtered from {totalJobs} total
+          </span>
+        )}
       </div>
 
       {/* Jobs Table */}
-      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl">
+      <div className="overflow-x-auto border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-lg">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0">
-            <tr className="border-b border-slate-200 dark:border-slate-700">
+          <thead className="bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 sticky top-0">
+            <tr className="border-b-2 border-slate-200 dark:border-slate-700">
               {onSelectJob && (
                 <th className="px-4 py-3 w-10">
                   <input
@@ -317,20 +367,20 @@ export function JobTable({
                   />
                 </th>
               )}
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Company</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Job Title</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Posted</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Age</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Location</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Salary</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Work Type</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Co. Size</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Website</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wide">Contact</th>
-              <th className="px-4 py-3 text-center text-xs font-bold text-slate-400 uppercase tracking-wide">Link</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Company</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Job Title</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Posted</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Age</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Location</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Salary</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Work Type</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Co. Size</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Website</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Contact</th>
+              <th className="px-4 py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Link</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
             {displayJobs.map((job, idx) => {
               const daysAgoInfo = formatDaysAgo(job.datePostedRaw)
               const workTypeLabel = formatWorkType(job.workType)
@@ -339,7 +389,7 @@ export function JobTable({
               return (
                 <tr
                   key={job.id || idx}
-                  className="hover:bg-blue-50/40 dark:hover:bg-blue-900/10 transition-colors"
+                  className="hover:bg-gradient-to-r hover:from-blue-50/50 hover:via-indigo-50/30 hover:to-blue-50/50 dark:hover:from-blue-900/10 dark:hover:via-indigo-900/5 dark:hover:to-blue-900/10 transition-all"
                 >
                   {onSelectJob && (
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -375,20 +425,17 @@ export function JobTable({
                           </span>
                         )}
                       </div>
-                      {/* Company size — only shown if we have real data */}
                       {companySizeLabel && (
                         <span className="text-xs text-slate-400 ml-6 flex items-center gap-1">
                           <Users className="w-2.5 h-2.5" />
                           {companySizeLabel}
                         </span>
                       )}
-                      {/* Industry */}
                       {job.companyIndustry && (
                         <span className="text-xs text-slate-400 ml-6 truncate max-w-[160px]">
                           {job.companyIndustry}
                         </span>
                       )}
-                      {/* FIX: Only show contactName if it's a real person name (validated in useScraper) */}
                       {job.contactName && (
                         <span className="text-xs text-indigo-600 dark:text-indigo-400 ml-6 flex items-center gap-1">
                           <User className="w-2.5 h-2.5" />
@@ -412,7 +459,6 @@ export function JobTable({
                           {job.subClassification || job.classification}
                         </span>
                       )}
-                      {/* Work arrangement (On-site / Hybrid / Remote) */}
                       {job.workArrangement && (
                         <span className="text-xs text-slate-400 ml-5">
                           {job.workArrangement}
@@ -457,7 +503,7 @@ export function JobTable({
                     {job.salary ? (
                       <div className="flex items-start gap-1">
                         <DollarSign className="w-3 h-3 text-green-600 shrink-0 mt-0.5" />
-                        <span className="text-xs text-green-700 dark:text-green-400 leading-tight">
+                        <span className="text-xs text-green-700 dark:text-green-400 leading-tight font-medium">
                           {job.salary}
                         </span>
                       </div>
@@ -467,20 +513,19 @@ export function JobTable({
                   </td>
 
                   {/* ── Work Type ─────────────────────────────────────────── */}
-                  {/* FIX: Full label "Full Time" not "F" */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     {workTypeLabel !== '—' ? (
                       <span className={cn(
-                        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold',
+                        'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold shadow-sm',
                         workTypeLabel === 'Full Time'
-                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                          ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white'
                           : workTypeLabel === 'Part Time'
-                          ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
                           : workTypeLabel === 'Contract'
-                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
                           : workTypeLabel === 'Casual'
-                          ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300'
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                       )}>
                         {workTypeLabel}
                       </span>
@@ -490,25 +535,23 @@ export function JobTable({
                   </td>
 
                   {/* ── Company Size ──────────────────────────────────────── */}
-                  {/* FIX: sanitized in useScraper — no more "N/A" here */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       <Users className="w-3 h-3 text-slate-400" />
-                      <span className="text-xs text-slate-600 dark:text-slate-400">
+                      <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
                         {companySizeLabel || '—'}
                       </span>
                     </div>
                   </td>
 
                   {/* ── Company Website ───────────────────────────────────── */}
-                  {/* FIX: "N/A" is sanitized to null in useScraper */}
                   <td className="px-4 py-3">
                     {job.companyWebsite ? (
                       <a
                         href={job.companyWebsite.startsWith('http') ? job.companyWebsite : `https://${job.companyWebsite}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-xs"
+                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-xs font-medium transition-colors"
                         title={job.companyWebsite}
                       >
                         <Globe className="w-3 h-3 shrink-0" />
@@ -534,7 +577,7 @@ export function JobTable({
                               key={i}
                               href={`mailto:${email}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-xs hover:underline border border-blue-100 dark:border-blue-800"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-md text-xs font-medium hover:from-blue-600 hover:to-indigo-600 transition-all shadow-sm"
                               title={email}
                             >
                               <Mail className="w-2.5 h-2.5 shrink-0" />
@@ -542,7 +585,7 @@ export function JobTable({
                             </a>
                           ))}
                           {job.emails.length > 2 && (
-                            <span className="text-xs text-slate-400 font-medium">+{job.emails.length - 2}</span>
+                            <span className="text-xs text-slate-400 font-bold">+{job.emails.length - 2}</span>
                           )}
                         </div>
                       )}
@@ -553,14 +596,14 @@ export function JobTable({
                               key={i}
                               href={`tel:${phone.replace(/\s/g, '')}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded text-xs hover:underline border border-emerald-100 dark:border-emerald-800"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-md text-xs font-medium hover:from-emerald-600 hover:to-teal-600 transition-all shadow-sm"
                             >
                               <Phone className="w-2.5 h-2.5 shrink-0" />
                               <span>{phone}</span>
                             </a>
                           ))}
                           {job.phones.length > 2 && (
-                            <span className="text-xs text-slate-400 font-medium">+{job.phones.length - 2}</span>
+                            <span className="text-xs text-slate-400 font-bold">+{job.phones.length - 2}</span>
                           )}
                         </div>
                       )}
@@ -576,11 +619,11 @@ export function JobTable({
                       {job.jobLink && job.jobLink !== '#' ? (
                         <button
                           onClick={() => openJobLink(job.jobLink)}
-                          className="inline-flex items-center gap-1 px-2 py-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          className="inline-flex items-center gap-1 px-3 py-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 dark:hover:bg-blue-900/20 rounded-lg transition-all font-medium shadow-sm hover:shadow-md"
                           title="View job ad"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
-                          <span className="text-xs font-medium">View</span>
+                          <span className="text-xs">View</span>
                         </button>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
@@ -603,10 +646,11 @@ export function JobTable({
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
             leftIcon={<ChevronLeft className="w-4 h-4" />}
+            className="border-2 hover:shadow-md transition-all"
           >
             Previous
           </Button>
-          <span className="text-sm text-slate-600 dark:text-slate-400">
+          <span className="text-sm text-slate-600 dark:text-slate-400 font-semibold">
             Page {currentPage} of {totalPages}
           </span>
           <Button
@@ -615,17 +659,25 @@ export function JobTable({
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             rightIcon={<ChevronRight className="w-4 h-4" />}
+            className="border-2 hover:shadow-md transition-all"
           >
             Next
           </Button>
         </div>
       )}
 
-      {hasActiveFilters && displayJobs.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-slate-500 dark:text-slate-400">No jobs match your filter criteria</p>
-          <button onClick={clearFilters} className="mt-2 text-blue-600 hover:text-blue-700 text-sm">
-            Clear filters
+      {(hasActiveFilters || filterOlderThan7Days) && displayJobs.length === 0 && (
+        <div className="text-center py-12 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-lg">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center mx-auto mb-4">
+            <Filter className="w-8 h-8 text-slate-500 dark:text-slate-400" />
+          </div>
+          <p className="text-slate-600 dark:text-slate-400 font-semibold mb-2">No jobs match your filter criteria</p>
+          <p className="text-sm text-slate-500 dark:text-slate-500 mb-4">Try adjusting your filters or clearing them</p>
+          <button 
+            onClick={clearFilters} 
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-semibold shadow-md hover:shadow-lg transition-all"
+          >
+            Clear all filters
           </button>
         </div>
       )}

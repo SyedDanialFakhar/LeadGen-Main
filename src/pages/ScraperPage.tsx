@@ -353,9 +353,9 @@ export function ScraperPage() {
                   Seek
                 </span>
               </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {/* <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Sales classification filter applied at source — get 15–18 valid leads instead of 3–5
-              </p>
+              </p> */}
             </div>
             <Button
               variant="outline"

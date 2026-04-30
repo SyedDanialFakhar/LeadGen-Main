@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Clock,
+  Filter,
 } from 'lucide-react'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -33,6 +35,8 @@ interface ScraperControlsProps {
   isLoadingMore?: boolean
   hasMore?: boolean
   currentResultCount?: number
+  onFilterOlderThan7DaysChange?: (enabled: boolean) => void
+  filterOlderThan7Days?: boolean
 }
 
 const SKIP_OPTIONS = [
@@ -66,6 +70,8 @@ export function ScraperControls({
   isLoadingMore = false,
   hasMore = false,
   currentResultCount = 0,
+  onFilterOlderThan7DaysChange,
+  filterOlderThan7Days = true,
 }: ScraperControlsProps) {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([JOB_ROLES[0]])
   const [customRoles, setCustomRoles] = useState<string[]>([])
@@ -107,46 +113,46 @@ export function ScraperControls({
   const canSubmit = !isLoading && getAllJobTitles().length > 0 && !(useCustomCity && !customCity.trim())
 
   return (
-    <Card className="overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 border-b-0">
+    <Card className="overflow-hidden border border-slate-200 dark:border-slate-700 shadow-lg">
+      {/* Header */}
+      <CardHeader className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 dark:from-blue-700 dark:via-blue-800 dark:to-indigo-900 border-b-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur flex items-center justify-center">
-              <Settings2 className="w-4 h-4 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg ring-2 ring-white/30">
+              <Settings2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-white">Scraper Configuration</h3>
+              <h3 className="font-bold text-white text-lg">Scraper Configuration</h3>
               <p className="text-xs text-blue-100 mt-0.5">
                 Sales filter applied at Seek level — faster &amp; accurate
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 backdrop-blur rounded-full">
-            <Zap className="w-3 h-3 text-yellow-300" />
-            <span className="text-xs font-semibold text-white">~20s</span>
+          <div className="flex items-center gap-2 px-3 py-2 bg-white/20 backdrop-blur-sm rounded-xl shadow-inner">
+            <Zap className="w-4 h-4 text-yellow-300 animate-pulse" />
+            <span className="text-sm font-bold text-white">~20s</span>
           </div>
         </div>
       </CardHeader>
 
-      <CardBody className="pt-5">
-        <form onSubmit={handleSubmit} className="space-y-5">
+      <CardBody className="pt-6 bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
+        <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* ── Job Roles ────────────────────────────────────────────── */}
-          <div className="space-y-2.5">
+          {/* Job Roles */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-blue-500" />
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 Job Titles
               </label>
-              <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+              <div className="flex gap-0.5 bg-slate-200/80 dark:bg-slate-700/80 rounded-lg p-0.5 backdrop-blur-sm">
                 <button
                   type="button"
                   onClick={() => setUseCustomRoles(false)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
                     !useCustomRoles
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Preset
@@ -154,10 +160,10 @@ export function ScraperControls({
                 <button
                   type="button"
                   onClick={() => setUseCustomRoles(true)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
                     useCustomRoles
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Custom
@@ -178,17 +184,17 @@ export function ScraperControls({
             ) : (
               <div className="space-y-2">
                 {customRoles.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                  <div className="flex flex-wrap gap-2 p-3 border-2 border-slate-200 dark:border-slate-700 rounded-xl bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-800 dark:to-slate-800">
                     {customRoles.map((role) => (
                       <span
                         key={role}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium border border-blue-200 dark:border-blue-800"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all"
                       >
                         {role}
                         <button
                           type="button"
                           onClick={() => handleRemoveCustomRole(role)}
-                          className="hover:text-red-500 transition-colors"
+                          className="hover:bg-white/20 rounded-full p-0.5 transition-colors"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -222,21 +228,21 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* ── Location ──────────────────────────────────────────────── */}
-          <div className="space-y-2.5">
+          {/* Location */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 Location
               </label>
-              <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+              <div className="flex gap-0.5 bg-slate-200/80 dark:bg-slate-700/80 rounded-lg p-0.5 backdrop-blur-sm">
                 <button
                   type="button"
                   onClick={() => setUseCustomCity(false)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
                     !useCustomCity
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
+                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Preset
@@ -244,10 +250,10 @@ export function ScraperControls({
                 <button
                   type="button"
                   onClick={() => setUseCustomCity(true)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
                     useCustomCity
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
+                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Custom
@@ -256,17 +262,17 @@ export function ScraperControls({
             </div>
 
             {!useCustomCity ? (
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-2">
                 {CITIES.map((city) => (
                   <button
                     key={city}
                     type="button"
                     onClick={() => setSelectedCity(city)}
                     disabled={isLoading}
-                    className={`py-2 px-3 text-xs font-medium rounded-xl border transition-all ${
+                    className={`py-2.5 px-3 text-xs font-semibold rounded-xl border-2 transition-all hover:scale-105 ${
                       selectedCity === city
-                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-300 hover:text-emerald-700 dark:hover:text-emerald-400'
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 border-emerald-400 text-white shadow-lg'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-300 hover:shadow-md'
                     }`}
                   >
                     {city === 'Australia' ? '🌏 Australia' : city}
@@ -283,20 +289,97 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* ── Sales Classification Toggle ────────────────────────────── */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+          {/* Age Filter Toggle */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+              <Filter className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              Display Filter
+            </label>
+            
+            <div className="relative overflow-hidden rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-900/20 dark:via-slate-800 dark:to-blue-900/20 shadow-md">
+              <div className="relative p-4">
+                <button
+                  type="button"
+                  onClick={() => onFilterOlderThan7DaysChange?.(!filterOlderThan7Days)}
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-between group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+                      filterOlderThan7Days 
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg shadow-blue-500/50' 
+                        : 'bg-slate-300 dark:bg-slate-600'
+                    }`}>
+                      <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-md transition-all duration-300 ${
+                        filterOlderThan7Days ? 'translate-x-5' : 'translate-x-0'
+                      }`} />
+                    </div>
+                    
+                    <div className="flex-1 text-left">
+                      <div className="flex items-center gap-2">
+                        <Clock className={`w-4 h-4 transition-colors ${
+                          filterOlderThan7Days 
+                            ? 'text-blue-600 dark:text-blue-400' 
+                            : 'text-slate-400'
+                        }`} />
+                        <span className={`text-sm font-bold transition-colors ${
+                          filterOlderThan7Days 
+                            ? 'text-blue-900 dark:text-blue-100' 
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}>
+                          Show only jobs 7+ days old
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-1 transition-colors ${
+                        filterOlderThan7Days 
+                          ? 'text-blue-700 dark:text-blue-300' 
+                          : 'text-slate-500 dark:text-slate-500'
+                      }`}>
+                        {filterOlderThan7Days 
+                          ? '✓ Filtering out fresh jobs — showing seasoned opportunities only' 
+                          : '○ Showing all jobs regardless of age'}
+                      </p>
+                    </div>
+
+                    <div className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      filterOlderThan7Days
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      {filterOlderThan7Days ? 'ON' : 'OFF'}
+                    </div>
+                  </div>
+                </button>
+
+                {filterOlderThan7Days && (
+                  <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800">
+                    <div className="flex items-start gap-2 text-xs">
+                      <span className="text-blue-600 dark:text-blue-400 font-bold">ℹ️</span>
+                      <p className="text-blue-700 dark:text-blue-300 leading-relaxed">
+                        Jobs posted within the last 7 days will be hidden from results. 
+                        This helps you focus on positions that have been open longer and may be harder to fill.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Sales Classification Toggle */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
               Classification Filter
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setSalesOnly(true)}
                 disabled={isLoading}
-                className={`py-2.5 text-sm font-semibold rounded-xl border-2 transition-all ${
+                className={`py-3 text-sm font-bold rounded-xl border-2 transition-all hover:scale-105 ${
                   salesOnly
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 border-blue-500 text-white shadow-lg'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-300 hover:shadow-md'
                 }`}
               >
                 💼 Sales Only
@@ -305,10 +388,10 @@ export function ScraperControls({
                 type="button"
                 onClick={() => setSalesOnly(false)}
                 disabled={isLoading}
-                className={`py-2.5 text-sm font-semibold rounded-xl border-2 transition-all ${
+                className={`py-3 text-sm font-bold rounded-xl border-2 transition-all hover:scale-105 ${
                   !salesOnly
-                    ? 'bg-slate-700 border-slate-700 text-white shadow-sm'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400'
+                    ? 'bg-gradient-to-r from-slate-700 to-slate-800 border-slate-600 text-white shadow-lg'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-400 hover:shadow-md'
                 }`}
               >
                 📂 All Classifications
@@ -316,102 +399,101 @@ export function ScraperControls({
             </div>
           </div>
 
-          {/* ── Max Results ───────────────────────────────────────────── */}
-          {/* ── Max Results ───────────────────────────────────────────── */}
-<div className="space-y-2">
-  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-    Results Per Job Title
-  </label>
-  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-    {[10, 20, 30, 50, 100, 550].map((n) => (
-      <button
-        key={n}
-        type="button"
-        onClick={() => setMaxResultsPerRun(n)}
-        className={`py-2.5 text-sm font-bold rounded-xl border-2 transition-all ${
-          maxResultsPerRun === n
-            ? 'bg-violet-600 border-violet-600 text-white shadow-sm'
-            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-violet-300'
-        }`}
-        disabled={isLoading}
-      >
-        {n}
-      </button>
-    ))}
-  </div>
-</div>
+          {/* Max Results */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+              Results Per Job Title
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {[10, 20, 30, 50, 100, 550].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMaxResultsPerRun(n)}
+                  className={`py-3 text-sm font-bold rounded-xl border-2 transition-all hover:scale-105 ${
+                    maxResultsPerRun === n
+                      ? 'bg-gradient-to-r from-violet-600 to-purple-600 border-violet-500 text-white shadow-lg'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-violet-300 hover:shadow-md'
+                  }`}
+                  disabled={isLoading}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          {/* ── Advanced Options ──────────────────────────────────────── */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          {/* Advanced Options */}
+          <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800 shadow-md">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 hover:from-slate-100 hover:to-slate-200 dark:hover:from-slate-700 dark:hover:to-slate-600 transition-all"
             >
               <div className="flex items-center gap-2">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Advanced Options</span>
+                <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Advanced Options</span>
                 {(skipPages > 0 || minAgeDays > 0) && (
-                  <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded-full text-xs font-semibold">
+                  <span className="px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-400 text-white rounded-full text-xs font-bold shadow-md">
                     Active
                   </span>
                 )}
               </div>
               {showAdvanced
-                ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                : <ChevronDown className="w-4 h-4 text-slate-400" />
+                ? <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                : <ChevronDown className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               }
             </button>
 
             {showAdvanced && (
-              <div className="p-4 space-y-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+              <div className="p-4 space-y-4 border-t-2 border-slate-200 dark:border-slate-700 bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800">
                 {/* Skip Pages */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <SkipForward className="w-3 h-3" />
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                    <SkipForward className="w-3.5 h-3.5" />
                     Skip Pages (older jobs)
                   </label>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-2">
                     {SKIP_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => setSkipPages(opt.value)}
-                        className={`px-2 py-2.5 text-xs rounded-xl border-2 transition-all text-left ${
+                        className={`px-2 py-3 text-xs rounded-xl border-2 transition-all text-left hover:scale-105 ${
                           skipPages === opt.value
-                            ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-300'
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400 text-white shadow-lg'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-amber-300 hover:shadow-md'
                         }`}
                         disabled={isLoading}
                       >
                         <div className="font-bold">{opt.label}</div>
-                        <div className={`text-xs mt-0.5 ${skipPages === opt.value ? 'text-amber-100' : 'text-slate-400'}`}>{opt.desc}</div>
+                        <div className={`text-xs mt-0.5 ${skipPages === opt.value ? 'text-amber-100' : 'text-slate-500 dark:text-slate-500'}`}>{opt.desc}</div>
                       </button>
                     ))}
                   </div>
                   {skipPages > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 font-medium">
                       ⏩ Will skip first {skipPages * 20} jobs and fetch the next {maxResultsPerRun}
                     </p>
                   )}
                 </div>
 
                 {/* Date Range */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                    <Calendar className="w-3 h-3" />
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                    <Calendar className="w-3.5 h-3.5" />
                     Date Range
                   </label>
-                  <div className="grid grid-cols-5 gap-1.5">
+                  <div className="grid grid-cols-5 gap-2">
                     {DATE_OPTIONS.map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => setMinAgeDays(opt.value)}
-                        className={`py-2.5 text-xs rounded-xl border-2 font-bold transition-all ${
+                        className={`py-3 text-xs rounded-xl border-2 font-bold transition-all hover:scale-105 ${
                           minAgeDays === opt.value
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 border-blue-500 text-white shadow-lg'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-300 hover:shadow-md'
                         }`}
                         disabled={isLoading}
                       >
@@ -424,45 +506,50 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* ── Active Filters badges ─────────────────────────────────── */}
-          <div className="flex flex-wrap gap-1.5">
+          {/* Active Filters badges */}
+          <div className="flex flex-wrap gap-2">
             {FILTER_BADGES.map((f) => (
               <span
                 key={f.label}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-lg border border-emerald-200 dark:border-emerald-800 text-xs font-medium"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg text-xs font-semibold shadow-md"
               >
-                {f.icon} {f.label}
+                <span className="text-base">{f.icon}</span> {f.label}
               </span>
             ))}
           </div>
 
-          {/* ── Summary Bar ──────────────────────────────────────────── */}
-          <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
-            <span className="font-bold text-slate-700 dark:text-slate-300">Search:</span>
-            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full font-medium">
+          {/* Summary Bar */}
+          <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 rounded-xl border-2 border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex-wrap shadow-inner">
+            <span className="font-bold text-slate-900 dark:text-white">Search:</span>
+            <span className="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full font-semibold shadow-md">
               {getAllJobTitles().length} title{getAllJobTitles().length !== 1 ? 's' : ''}
             </span>
             <span>in</span>
-            <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-full font-medium">
+            <span className="px-2.5 py-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full font-semibold shadow-md">
               {getCityDisplay()}
             </span>
             <span>·</span>
-            <span className="px-2 py-0.5 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 rounded-full font-medium">
+            <span className="px-2.5 py-1 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-full font-semibold shadow-md">
               {maxResultsPerRun} results
             </span>
             {skipPages > 0 && (
-              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-full font-medium">
+              <span className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full font-semibold shadow-md">
                 Skip {skipPages} pages
+              </span>
+            )}
+            {filterOlderThan7Days && (
+              <span className="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full font-semibold shadow-md">
+                7+ days only
               </span>
             )}
           </div>
 
-          {/* ── Submit ───────────────────────────────────────────────── */}
+          {/* Submit Button */}
           <Button
             type="submit"
             isLoading={isLoading}
             leftIcon={<Play className="w-4 h-4" />}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold shadow-md shadow-blue-200 dark:shadow-blue-900/30 border-0"
+            className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 text-white font-bold shadow-xl shadow-blue-500/30 dark:shadow-blue-900/50 border-0 py-4 text-base"
             size="lg"
             disabled={!canSubmit}
           >
@@ -477,7 +564,7 @@ export function ScraperControls({
               onClick={onLoadMore}
               isLoading={isLoadingMore}
               variant="outline"
-              className="w-full"
+              className="w-full border-2 hover:bg-slate-50 dark:hover:bg-slate-800"
             >
               {isLoadingMore
                 ? 'Loading More...'
