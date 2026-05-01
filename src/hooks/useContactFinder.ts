@@ -18,38 +18,42 @@ export interface ContactFinderState {
   isRunning: boolean
   isDone: boolean
   totalCreditsUsed: number
+  totalCreditsSaved: number
 }
 
 function makeInitialResult(lead: Lead): ContactFinderResult {
   return {
-    leadId: lead.id,
-    companyName: lead.companyName,
-    phase: 'idle',
-    apolloOrgId: null,
-    employeeCount: null,
+    leadId:             lead.id,
+    companyName:        lead.companyName,
+    phase:              'idle',
+    apolloOrgId:        null,
+    employeeCount:      null,
+    seekEmployeeCount:  lead.companyEmployeeCount ?? null,
     companyLinkedinUrl: lead.companyLinkedinUrl ?? null,
-    companyWebsite: lead.companyWebsite ?? null,
-    companyDomain: null,
-    industry: null,
-    contactName: null,
-    contactTitle: null,
+    companyWebsite:     lead.companyWebsite ?? null,
+    companyDomain:      null,
+    industry:           null,
+    contactName:        null,
+    contactTitle:       null,
     contactLinkedinUrl: null,
-    contactEmail: null,
-    emailStatus: null,
-    skipReason: null,
-    error: null,
-    emailSource: null,
-    creditsUsed: 0,
+    contactEmail:       null,
+    emailStatus:        null,
+    skipReason:         null,
+    error:              null,
+    emailSource:        null,
+    creditsUsed:        0,
+    creditsSaved:       0,
   }
 }
 
 export function useContactFinder() {
   const [state, setState] = useState<ContactFinderState>({
-    entries: [],
-    activeIndex: -1,
-    isRunning: false,
-    isDone: false,
-    totalCreditsUsed: 0,
+    entries:           [],
+    activeIndex:       -1,
+    isRunning:         false,
+    isDone:            false,
+    totalCreditsUsed:  0,
+    totalCreditsSaved: 0,
   })
 
   const abortRef = useRef(false)
@@ -59,21 +63,21 @@ export function useContactFinder() {
     abortRef.current = false
 
     setState({
-      entries: leads.map(lead => ({ lead, result: makeInitialResult(lead) })),
-      activeIndex: 0,
-      isRunning: true,
-      isDone: false,
-      totalCreditsUsed: 0,
+      entries:           leads.map(lead => ({ lead, result: makeInitialResult(lead) })),
+      activeIndex:       0,
+      isRunning:         true,
+      isDone:            false,
+      totalCreditsUsed:  0,
+      totalCreditsSaved: 0,
     })
 
     let totalCredits = 0
+    let totalSaved   = 0
 
     for (let i = 0; i < leads.length; i++) {
       if (abortRef.current) break
 
-      const lead = leads[i]
-
-      const finalResult = await findContactForLead(lead, (phase, partial) => {
+      const finalResult = await findContactForLead(leads[i], (phase, partial) => {
         if (abortRef.current) return
         setState(prev => {
           const updated = [...prev.entries]
@@ -85,29 +89,26 @@ export function useContactFinder() {
       if (abortRef.current) break
 
       totalCredits += finalResult.creditsUsed
+      totalSaved   += finalResult.creditsSaved
 
       setState(prev => {
         const updated = [...prev.entries]
         updated[i] = { ...updated[i], result: finalResult }
-        return { ...prev, entries: updated, totalCreditsUsed: totalCredits }
+        return { ...prev, entries: updated, totalCreditsUsed: totalCredits, totalCreditsSaved: totalSaved }
       })
 
-      // Throttle between leads to respect Apollo rate limits
-      if (i < leads.length - 1) await new Promise(r => setTimeout(r, 800))
+      // Throttle between leads — Apollo rate limit on free tier
+      if (i < leads.length - 1) await new Promise(r => setTimeout(r, 900))
     }
 
-    setState(prev => ({
-      ...prev,
-      isRunning: false,
-      isDone: true,
-    }))
+    setState(prev => ({ ...prev, isRunning: false, isDone: true }))
   }, [])
 
   const stop = useCallback(() => { abortRef.current = true }, [])
 
   const reset = useCallback(() => {
     abortRef.current = false
-    setState({ entries: [], activeIndex: -1, isRunning: false, isDone: false, totalCreditsUsed: 0 })
+    setState({ entries: [], activeIndex: -1, isRunning: false, isDone: false, totalCreditsUsed: 0, totalCreditsSaved: 0 })
   }, [])
 
   return { ...state, runForLeads, stop, reset }

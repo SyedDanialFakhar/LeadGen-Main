@@ -19,14 +19,14 @@ interface ScraperHistoryProps {
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; colour: string; icon: string }> = {
-  recruitment_agency:   { label: 'Agency', colour: 'bg-rose-500', icon: '🚫' },
-  recruitment_website:  { label: 'Agency Site', colour: 'bg-rose-400', icon: '🌐' },
-  no_agency_disclaimer: { label: 'Blocks Agencies', colour: 'bg-orange-500', icon: '⛔' },
-  hr_consulting:        { label: 'HR Consulting', colour: 'bg-amber-500', icon: '👥' },
-  law_firm:             { label: 'Law Firm', colour: 'bg-purple-500', icon: '⚖️' },
+  recruitment_agency:   { label: 'Agency', colour: 'bg-red-500', icon: '🚫' },
+  recruitment_website:  { label: 'Agency Site', colour: 'bg-orange-500', icon: '🌐' },
+  no_agency_disclaimer: { label: 'Blocks Agencies', colour: 'bg-amber-500', icon: '⛔' },
+  hr_consulting:        { label: 'HR Consulting', colour: 'bg-yellow-500', icon: '👥' },
+  law_firm:             { label: 'Law Firm', colour: 'bg-indigo-500', icon: '⚖️' },
   private_advertiser:   { label: 'Private', colour: 'bg-slate-500', icon: '🏢' },
   non_sales:            { label: 'Non-Sales', colour: 'bg-blue-500', icon: '📂' },
-  recruiter_profile:    { label: 'Recruiter', colour: 'bg-red-500', icon: '👤' },
+  recruiter_profile:    { label: 'Recruiter', colour: 'bg-rose-500', icon: '👤' },
   recruiter_email:      { label: 'Recruiter Email', colour: 'bg-pink-500', icon: '📧' },
   external_recruiter:   { label: 'External', colour: 'bg-red-600', icon: '🔗' },
 }

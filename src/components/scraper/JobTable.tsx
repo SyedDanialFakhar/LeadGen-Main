@@ -36,6 +36,7 @@ interface JobTableProps {
   onSelectAll?: () => void
   allSelected?: boolean
   filterOlderThan7Days?: boolean
+  onToggle7DaysFilter?: () => void
 }
 
 type AgeFilterType = 'all' | 'today' | 'week' | 'month' | 'older' | 'custom'
@@ -104,6 +105,7 @@ export function JobTable({
   onSelectAll,
   allSelected = false,
   filterOlderThan7Days = true,
+  onToggle7DaysFilter, 
 }: JobTableProps) {
   const [ageFilter, setAgeFilter] = useState<AgeFilterType>('all')
   const [customDays, setCustomDays] = useState<number>(30)
@@ -124,35 +126,41 @@ export function JobTable({
   // ✨ ENHANCED FILTERING — Now includes 7+ days filter
   // ═══════════════════════════════════════════════════════════════════════════
   const filteredJobs = useMemo(() => {
-    let result = jobs
-
-    // FIRST: Apply 7+ days filter if enabled
+    let result = [...jobs]
+  
+    // Helper function to get days between dates
+    const getDaysBetween = (date: Date, referenceDate: Date = new Date()): number => {
+      const d1 = new Date(date)
+      d1.setHours(0, 0, 0, 0)
+      const d2 = new Date(referenceDate)
+      d2.setHours(0, 0, 0, 0)
+      return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+    }
+  
+    // FIRST: Apply 7+ days filter if enabled (toggleable)
     if (filterOlderThan7Days) {
       result = result.filter((job) => {
         if (!job.datePostedRaw) return false
-        const jobDate = new Date(job.datePostedRaw)
-        jobDate.setHours(0, 0, 0, 0)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const daysOld = getDaysBetween(jobDate, today)
+        const daysOld = getDaysBetween(new Date(job.datePostedRaw))
         return daysOld >= 7
       })
     }
-
+  
     // SECOND: Apply additional age filters if set
     if (ageFilter === 'all' && !customDateRange.from && !customDateRange.to) {
       return result
     }
-
+  
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-
+  
     return result.filter((job) => {
       if (!job.datePostedRaw) return false
       const jobDate = new Date(job.datePostedRaw)
       jobDate.setHours(0, 0, 0, 0)
       const daysOld = getDaysBetween(jobDate, today)
-
+  
+      // Custom date range filter
       if (customDateRange.from) {
         const fromDate = new Date(customDateRange.from)
         fromDate.setHours(0, 0, 0, 0)
@@ -163,7 +171,8 @@ export function JobTable({
         toDate.setHours(23, 59, 59, 999)
         if (jobDate > toDate) return false
       }
-
+  
+      // Age filter switch
       switch (ageFilter) {
         case 'today': return daysOld === 0
         case 'week': return daysOld <= 7
@@ -256,6 +265,21 @@ export function JobTable({
           <span>Additional Filters</span>
           <ChevronDown className={cn('w-3 h-3 transition-transform', showAgeFilter && 'rotate-180')} />
         </button>
+        <button
+  onClick={onToggle7DaysFilter}
+  className={cn(
+    'flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-lg transition-all hover:scale-105',
+    filterOlderThan7Days
+      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg'
+      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-slate-200 dark:border-slate-600'
+  )}
+>
+  <Clock className="w-4 h-4" />
+  <span>7+ Days Only</span>
+  {filterOlderThan7Days && (
+    <span className="text-xs bg-white/20 rounded-full px-1.5 py-0.5 ml-1">ON</span>
+  )}
+</button>
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="w-3 h-3" />}>

@@ -1,5 +1,5 @@
 // src/pages/ScraperPage.tsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { TopNav } from '@/components/layout/TopNav'
 import { ScraperControls } from '@/components/scraper/ScraperControls'
 import { ScraperLog } from '@/components/scraper/ScraperLog'
@@ -24,7 +24,7 @@ import {
   Square,
   XCircle,
   Sparkles,
-  LayoutGrid,
+  Filter,
 } from 'lucide-react'
 import type { LeadStatus, EnrichmentStatus, NewLead } from '@/types'
 import type { FilteredJobRecord } from '@/services/scraperHistoryService'
@@ -55,17 +55,24 @@ const safeString = (value: unknown): string | null => {
   return str
 }
 
-// Convert filtered job to NewLead format
+// Get days between two dates
+const getDaysBetween = (date: Date, referenceDate: Date = new Date()): number => {
+  const d1 = new Date(date)
+  d1.setHours(0, 0, 0, 0)
+  const d2 = new Date(referenceDate)
+  d2.setHours(0, 0, 0, 0)
+  return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 // Convert filtered job to NewLead format
 const convertFilteredJobToLead = (job: FilteredJobRecord): NewLead => {
-  // Validate required fields
   if (!job.jobLink) {
     console.warn('Job missing jobLink:', job)
   }
   
   return {
     datePosted: new Date().toISOString(),
-    jobAdUrl: job.jobLink || '',  // Required field with fallback
+    jobAdUrl: job.jobLink || '',
     platform: 'seek',
     city: 'Australia',
     location: null,
@@ -117,6 +124,7 @@ const convertFilteredJobToLead = (job: FilteredJobRecord): NewLead => {
     response: null,
   }
 }
+
 // ── Component ─────────────────────────────────────────────────────────────
 
 export function ScraperPage() {
@@ -145,6 +153,9 @@ export function ScraperPage() {
   const [history, setHistory] = useState<ScraperHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [showHistory, setShowHistory] = useState(false)
+  
+  // NEW: State for 7+ days filter (toggleable)
+  const [filterOlderThan7Days, setFilterOlderThan7Days] = useState(true)
 
   useEffect(() => {
     loadHistory()
@@ -169,11 +180,30 @@ export function ScraperPage() {
     }
   }
 
+  // NEW: Helper to get visible jobs after applying all filters
+  const getVisibleJobs = useMemo(() => {
+    let visible = [...jobs]
+    
+    // Apply 7+ days filter if enabled
+    if (filterOlderThan7Days) {
+      visible = visible.filter((job) => {
+        if (!job.datePostedRaw) return false
+        const daysOld = getDaysBetween(new Date(job.datePostedRaw))
+        return daysOld >= 7
+      })
+    }
+    
+    return visible
+  }, [jobs, filterOlderThan7Days])
+
+  const visibleJobsCount = getVisibleJobs.length
+
   const handleSelectAll = () => {
-    if (selectedJobIds.size === jobs.length) {
+    // Select only VISIBLE jobs
+    if (selectedJobIds.size === visibleJobsCount) {
       setSelectedJobIds(new Set())
     } else {
-      setSelectedJobIds(new Set(jobs.map((job) => job.id)))
+      setSelectedJobIds(new Set(getVisibleJobs.map((job) => job.id)))
     }
   }
 
@@ -259,6 +289,7 @@ export function ScraperPage() {
     }
   }
 
+  // FIXED: Save only SELECTED visible jobs
   const handleSaveSelected = async () => {
     const selectedJobs = jobs.filter((job) => selectedJobIds.has(job.id))
     if (selectedJobs.length === 0) {
@@ -277,15 +308,16 @@ export function ScraperPage() {
     }
   }
 
+  // FIXED: Save only VISIBLE jobs (after filters)
   const handleSaveAll = async () => {
-    if (jobs.length === 0) {
-      showToast('No jobs to save', 'error')
+    if (visibleJobsCount === 0) {
+      showToast('No visible jobs to save - try disabling the 7+ days filter', 'warning')
       return
     }
     setIsSaving(true)
     try {
-      await createLeads(jobs.map(buildLeadPayload))
-      showToast(`Saved all ${jobs.length} lead(s) to database`, 'success')
+      await createLeads(getVisibleJobs.map(buildLeadPayload))
+      showToast(`Saved all ${visibleJobsCount} visible lead(s) to database`, 'success')
       setSelectedJobIds(new Set())
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to save leads', 'error')
@@ -309,14 +341,14 @@ export function ScraperPage() {
                 size="sm"
                 onClick={handleSelectAll}
                 leftIcon={
-                  selectedJobIds.size === jobs.length ? (
+                  selectedJobIds.size === visibleJobsCount ? (
                     <CheckSquare className="w-4 h-4" />
                   ) : (
                     <Square className="w-4 h-4" />
                   )
                 }
               >
-                {selectedJobIds.size === jobs.length ? 'Deselect All' : 'Select All'}
+                {selectedJobIds.size === visibleJobsCount ? 'Deselect All' : 'Select All'}
               </Button>
               <Button
                 variant="outline"
@@ -335,7 +367,7 @@ export function ScraperPage() {
                 disabled={isSaving}
                 leftIcon={<Sparkles className="w-4 h-4" />}
               >
-                Save All ({jobs.length})
+                Save Visible ({visibleJobsCount})
               </Button>
             </div>
           ) : null
@@ -344,7 +376,7 @@ export function ScraperPage() {
 
       <div className="flex-1 p-6">
         <div className="max-w-5xl mx-auto space-y-6">
-          {/* ── Header ────────────────────────────────────────────────────── */}
+          {/* Header */}
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -353,16 +385,13 @@ export function ScraperPage() {
                   Seek
                 </span>
               </h1>
-              {/* <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Sales classification filter applied at source — get 15–18 valid leads instead of 3–5
-              </p> */}
             </div>
             <Button
               variant="outline"
               onClick={() => setShowHistory(!showHistory)}
               leftIcon={
                 showHistory ? (
-                  <ChevronUp className="w-4 h-4" />
+                  <ChevronDown className="w-4 h-4" />
                 ) : (
                   <History className="w-4 h-4" />
                 )
@@ -378,7 +407,7 @@ export function ScraperPage() {
             </Button>
           </div>
 
-          {/* ── History Panel (collapsible) ───────────────────────────────── */}
+          {/* History Panel */}
           {showHistory && (
             <div className="animate-in slide-in-from-top-2 duration-200">
               <ScraperHistory 
@@ -389,7 +418,7 @@ export function ScraperPage() {
             </div>
           )}
 
-          {/* ── Main Content - Single Column ──────────────────────────────── */}
+          {/* Main Content */}
           <div className="space-y-6">
             {/* Controls Card */}
             <ScraperControls
@@ -399,9 +428,11 @@ export function ScraperPage() {
               isLoadingMore={isLoadingMore}
               hasMore={hasMore}
               currentResultCount={jobs.length}
+              onFilterOlderThan7DaysChange={setFilterOlderThan7Days}
+              filterOlderThan7Days={filterOlderThan7Days}
             />
 
-            {/* Progress Tracker (only shows when scraping) */}
+            {/* Progress Tracker */}
             {(isLoading || metrics.totalRaw > 0) && (
               <ScraperProgressTracker
                 isRunning={isLoading}
@@ -411,7 +442,7 @@ export function ScraperPage() {
               />
             )}
 
-            {/* Logs (initially collapsed) */}
+            {/* Logs */}
             <ScraperLog logs={logs} isRunning={isLoading} />
 
             {/* Error Banner */}
@@ -444,8 +475,8 @@ export function ScraperPage() {
               </Card>
             )}
 
-            {/* Results Table */}
-            {jobs.length > 0 && (
+            {/* Results Table - Only show if there are VISIBLE jobs */}
+            {visibleJobsCount > 0 ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
@@ -453,9 +484,14 @@ export function ScraperPage() {
                       Results
                     </h2>
                     <span className="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-sm font-semibold">
-                      {jobs.length} valid leads
+                      {visibleJobsCount} visible leads
                     </span>
-                    {selectedJobIds.size > 0 && selectedJobIds.size < jobs.length && (
+                    {jobs.length !== visibleJobsCount && (
+                      <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full text-sm">
+                        {jobs.length - visibleJobsCount} filtered out
+                      </span>
+                    )}
+                    {selectedJobIds.size > 0 && selectedJobIds.size < visibleJobsCount && (
                       <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm">
                         {selectedJobIds.size} selected
                       </span>
@@ -477,7 +513,7 @@ export function ScraperPage() {
                       disabled={isSaving}
                       leftIcon={<Save className="w-3.5 h-3.5" />}
                     >
-                      Save All ({jobs.length})
+                      Save Visible ({visibleJobsCount})
                     </Button>
                   </div>
                 </div>
@@ -493,12 +529,43 @@ export function ScraperPage() {
                       selectedJobIds={selectedJobIds}
                       onSelectJob={handleSelectJob}
                       onSelectAll={handleSelectAll}
-                      allSelected={selectedJobIds.size === jobs.length}
+                      allSelected={selectedJobIds.size === visibleJobsCount}
+                      filterOlderThan7Days={filterOlderThan7Days}
+                      onToggle7DaysFilter={() => setFilterOlderThan7Days(!filterOlderThan7Days)}
                     />
                   </CardBody>
                 </Card>
               </div>
-            )}
+            ) : jobs.length > 0 && visibleJobsCount === 0 ? (
+              // Show message when all jobs are filtered out
+              <Card className="border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
+                <CardBody>
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto mb-4">
+                      <Filter className="w-8 h-8 text-amber-500" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+                      All jobs filtered out
+                    </h3>
+                    <p className="text-sm text-amber-600 dark:text-amber-400 max-w-md mx-auto">
+                      {filterOlderThan7Days 
+                        ? `All ${jobs.length} job(s) were posted within the last 7 days. Try disabling the "7+ days only" filter to see them.`
+                        : `No jobs match the current filter criteria.`}
+                    </p>
+                    {filterOlderThan7Days && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setFilterOlderThan7Days(false)}
+                        className="mt-4 border-amber-300 text-amber-700 hover:bg-amber-100"
+                      >
+                        Show fresh jobs
+                      </Button>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
+            ) : null}
 
             {/* Empty State */}
             {showEmptyState && (
@@ -526,7 +593,7 @@ export function ScraperPage() {
                         ~20s target time
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-violet-400" />
+                        <span className="w-2 h-2 rounded-full bg-indigo-400" />
                         15–18 leads expected
                       </div>
                     </div>
