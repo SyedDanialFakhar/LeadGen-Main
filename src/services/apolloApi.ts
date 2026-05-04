@@ -1,105 +1,101 @@
-// src/services/apolloApi.ts
 /**
- * APOLLO.IO API SERVICE — CORRECTED VERSION
+ * APOLLO.IO API SERVICE — COMPLETE & CORRECTED
  * ─────────────────────────────────────────────────────────────────────────────
- * CRITICAL FIXES:
- *   1. Correct endpoint: /mixed_people/search (NOT /mixed_people/api_search)
- *   2. Correct field names in request bodies
- *   3. Proper error handling with detailed messages
- *   4. API key validation before making requests
+ * VERIFIED CORRECT ENDPOINTS (2025):
  *
- * SETUP:
- *   1. Go to: developer.apollo.io/#/keys
- *   2. Create new key → Toggle "Set as master key" ON
- *   3. Add to Settings page in your app (stored in Supabase)
+ *   Base URL         : https://api.apollo.io/api/v1        ← /api/v1 NOT /v1
+ *   Org enrichment   : GET  /organizations/enrich?domain=  ← GET, query param
+ *   Org search       : POST /mixed_companies/search?q_...  ← POST, query string
+ *   People search    : POST /mixed_people/api_search?...   ← api_search NOT search
+ *   People enrich    : POST /people/match?id=...           ← query string NOT body
  *
- * Base URL: https://api.apollo.io/v1 (NOT /api/v1)
- * Auth: Header x-api-key
+ * PHONE NUMBERS — REALITY CHECK:
+ *   • Direct dial (corporate/office): returned synchronously, no extra credits
+ *   • Personal mobile: 8 credits each + requires async webhook — NOT used here
+ *   • Free plan: 5 mobile credits/month total — way too limited for daily use
+ *   • We capture direct dial (office) from people/match synchronously.
  *
- * CREDITS (free tier):
- *   - Organization enrich: 1 credit
- *   - Company search: 1 credit  
- *   - People search: FREE (no email returned)
- *   - People match (email reveal): 1 credit
+ * CREDITS (free tier ~100/month):
+ *   People search    : FREE
+ *   Org enrichment   : 1 credit
+ *   Email reveal     : 1 credit
+ *   Mobile reveal    : 8 credits (not used — too expensive)
  */
 
 import { getApolloApiKey } from './settingsService'
 
-const BASE = 'https://api.apollo.io/v1'
+const BASE = 'https://api.apollo.io/api/v1'
 
-// ─── Shared fetch with proper error handling ──────────────────────────────────
+// ─── Query string builder ──────────────────────────────────────────────────────
 
-async function apolloFetch(path: string, init: RequestInit): Promise<Response> {
+function buildQS(
+  params: Record<string, string | string[] | boolean | number | null | undefined>,
+): string {
+  const parts: string[] = []
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined) continue
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        parts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(String(v))}`)
+      }
+    } else {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    }
+  }
+  return parts.join('&')
+}
+
+// ─── Core fetch ────────────────────────────────────────────────────────────────
+
+async function apolloFetch(
+  path: string,
+  method: 'GET' | 'POST',
+  qs?: string,
+): Promise<Response> {
   const key = await getApolloApiKey()
 
   if (!key || key.trim() === '') {
     throw new Error(
-      'Apollo API key not configured.\n\n' +
-      'Setup steps:\n' +
-      '1. Go to developer.apollo.io/#/keys\n' +
-      '2. Click "Create new key"\n' +
-      '3. IMPORTANT: Toggle "Set as master key" ON\n' +
-      '4. Copy the key and add it in Settings page\n' +
-      '5. Refresh this page'
+      'Apollo API key not configured.\n' +
+        '1. Go to developer.apollo.io/#/keys\n' +
+        '2. Create key → toggle "Set as master key" ON\n' +
+        '3. Add it in Settings → Apollo API Key',
     )
   }
 
-  console.log(`[Apollo] ${init.method} ${path}`)
+  const url = `${BASE}${path}${qs ? `?${qs}` : ''}`
+  console.log(`[Apollo] ${method} ${path}${qs ? ` ?${qs.slice(0, 100)}…` : ''}`)
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
+  const res = await fetch(url, {
+    method,
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache',
+      accept: 'application/json',
       'x-api-key': key.trim(),
-      ...(init.headers as Record<string, string> | undefined ?? {}),
     },
   })
 
-  // Log response for debugging
-  console.log(`[Apollo] Response ${res.status} for ${path}`)
-
+  console.log(`[Apollo] → ${res.status}`)
   if (res.ok) return res
 
-  // Try to get error message from response
-  let errorDetail = ''
+  let detail = ''
   try {
-    const errorData = await res.clone().json()
-    errorDetail = errorData.message || errorData.error || JSON.stringify(errorData)
+    const err = await res.clone().json()
+    detail = err.message || err.error || JSON.stringify(err)
   } catch {
-    errorDetail = await res.clone().text().catch(() => '')
+    detail = await res.clone().text().catch(() => '')
   }
 
-  // Specific error messages
-  if (res.status === 401) {
+  if (res.status === 401) throw new Error('Apollo 401: Invalid API key — check Settings.')
+  if (res.status === 403)
     throw new Error(
-      'Apollo 401: Invalid API key.\n\n' +
-      'Your API key is incorrect or expired.\n' +
-      'Please check your Settings page and update the Apollo API key.'
+      'Apollo 403: Key must be a MASTER key.\n' +
+        'Go to developer.apollo.io/#/keys → toggle "Set as master key" ON.',
     )
-  }
-  
-  if (res.status === 403) {
-    throw new Error(
-      'Apollo 403: Permission denied.\n\n' +
-      'Your API key must be a MASTER key.\n\n' +
-      'Fix:\n' +
-      '1. Go to developer.apollo.io/#/keys\n' +
-      '2. Find your key or create a new one\n' +
-      '3. Toggle "Set as master key" ON\n' +
-      '4. Update the key in Settings page'
-    )
-  }
-  
-  if (res.status === 422) {
-    throw new Error(`Apollo 422: Invalid request - ${errorDetail}`)
-  }
-  
-  if (res.status === 429) {
-    throw new Error('Apollo 429: Rate limit exceeded. Please wait 60 seconds and try again.')
-  }
-
-  throw new Error(`Apollo ${res.status}: ${errorDetail || res.statusText}`)
+  if (res.status === 422) throw new Error(`Apollo 422: Invalid request — ${detail}`)
+  if (res.status === 429) throw new Error('Apollo 429: Rate limit — wait 60s.')
+  throw new Error(`Apollo ${res.status}: ${detail || res.statusText}`)
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -114,6 +110,7 @@ export interface ApolloOrg {
   city: string | null
   country: string | null
   domain: string | null
+  phone: string | null
 }
 
 export interface ApolloPerson {
@@ -125,6 +122,7 @@ export interface ApolloPerson {
   linkedinUrl: string | null
   email: string | null
   emailStatus: string | null
+  phone: string | null
   orgName: string | null
 }
 
@@ -167,7 +165,7 @@ export interface ApolloEnrichedContact {
   } | null
 }
 
-// ─── Helper to map organization data ───────────────────────────────────────────
+// ─── Mappers ───────────────────────────────────────────────────────────────────
 
 function mapOrg(o: any, fallbackDomain?: string | null): ApolloOrg {
   return {
@@ -180,113 +178,94 @@ function mapOrg(o: any, fallbackDomain?: string | null): ApolloOrg {
     city: o.city ?? null,
     country: o.country ?? null,
     domain: o.primary_domain ?? o.domain ?? fallbackDomain ?? null,
+    phone: o.phone ?? o.sanitized_phone ?? null,
   }
 }
 
-// ─── 1. Organization enrichment by domain (1 credit) ───────────────────────────
+function extractPhone(p: any): string | null {
+  if (p.phone) return p.phone
+  const phones: any[] = p.phone_numbers ?? []
+  if (!phones.length) return null
+  const directDial = phones.find(ph =>
+    ['direct_dial', 'work_direct', 'corporate'].includes(ph.type_cd),
+  )
+  const mobile = phones.find(ph => ph.type_cd === 'mobile')
+  const any = phones[0]
+  return (directDial ?? mobile ?? any)?.sanitized_number ?? null
+}
+
+// ─── 1. Org enrichment by domain — 1 credit ───────────────────────────────────
 
 export async function enrichOrganizationByDomain(domain: string): Promise<ApolloOrg | null> {
-  // Clean domain
   const clean = domain
     .replace(/^https?:\/\/(www\.)?/, '')
     .replace(/\/.*$/, '')
     .toLowerCase()
     .trim()
 
-  if (!clean || clean.length < 4) {
+  if (!clean || clean.length < 4 || !clean.includes('.')) {
     console.warn('[Apollo] Invalid domain:', domain)
     return null
   }
 
-  console.log('[Apollo] Enriching organization by domain:', clean)
+  console.log('[Apollo] Enrich org by domain:', clean)
 
   try {
-    const res = await apolloFetch(`/organizations/enrich?domain=${encodeURIComponent(clean)}`, {
-      method: 'GET',
-    })
-    
+    const res = await apolloFetch('/organizations/enrich', 'GET', buildQS({ domain: clean }))
     const data = await res.json()
-    console.log('[Apollo] Organization enrich response:', data)
-    
     if (!data.organization) {
-      console.log('[Apollo] No organization found for domain:', clean)
+      console.log('[Apollo] Domain not found:', clean)
       return null
     }
-    
-    return mapOrg(data.organization, clean)
+    const org = mapOrg(data.organization, clean)
+    console.log('[Apollo] Org found:', org.name, '| emp:', org.estimatedNumEmployees)
+    return org
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
-    
-    // 422 means domain not found in Apollo - this is not an error, just no data
-    if (errorMsg.includes('422') || errorMsg.includes('Invalid request')) {
-      console.log('[Apollo] Domain not in Apollo database:', clean)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('422') || msg.includes('Invalid request')) {
+      console.log('[Apollo] Domain not in DB:', clean)
       return null
     }
-    
-    // Real errors should be thrown
-    console.error('[Apollo] Organization enrich error:', errorMsg)
     throw err
   }
 }
 
-// ─── 2. Organization search by name (1 credit) ─────────────────────────────────
+// ─── 2. Org search by name — 1 credit ─────────────────────────────────────────
 
 export async function searchOrganizationByName(companyName: string): Promise<ApolloOrg | null> {
-  console.log('[Apollo] Searching organization by name:', companyName)
+  console.log('[Apollo] Search org by name:', companyName)
 
-  const requestBody = {
-    organization_name: companyName, // CORRECTED: was q_organization_name
+  const qs = buildQS({
+    q_organization_name: companyName,
     organization_locations: ['Australia'],
     per_page: 5,
     page: 1,
-  }
-
-  console.log('[Apollo] Company search request:', requestBody)
-
-  const res = await apolloFetch('/mixed_companies/search', {
-    method: 'POST',
-    body: JSON.stringify(requestBody),
   })
 
+  const res = await apolloFetch('/mixed_companies/search', 'POST', qs)
   const data = await res.json()
-  console.log('[Apollo] Company search response:', data)
-
   const orgs: any[] = data.organizations ?? []
-  
-  if (!orgs.length) {
-    console.log('[Apollo] No organizations found for:', companyName)
-    return null
-  }
 
-  // Find best match - prefer exact name match or name containing first significant word
-  const firstWord = companyName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .split(' ')
-    .find(w => w.length > 3) ?? ''
+  if (!orgs.length) return null
 
-  let best = orgs[0]
-  
-  if (firstWord) {
-    const exactMatch = orgs.find(o => 
-      o.name?.toLowerCase() === companyName.toLowerCase()
-    )
-    if (exactMatch) {
-      best = exactMatch
-    } else {
-      const wordMatch = orgs.find(o => 
-        o.name?.toLowerCase().includes(firstWord)
-      )
-      if (wordMatch) best = wordMatch
-    }
-  }
+  const lc = companyName.toLowerCase()
+  const firstWord =
+    lc
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(' ')
+      .find(w => w.length > 3) ?? ''
 
-  console.log('[Apollo] Selected organization:', best.name)
-  return mapOrg(best, best.primary_domain ?? null)
+  const exact = orgs.find(o => o.name?.toLowerCase() === lc)
+  const wordMatch = firstWord
+    ? orgs.find(o => o.name?.toLowerCase().includes(firstWord))
+    : null
+  const best = exact ?? wordMatch ?? orgs[0]
+
+  console.log('[Apollo] Best org:', best.name, '| emp:', best.estimated_num_employees)
+  return mapOrg(best)
 }
 
-// ─── 3. People search by titles (FREE - no credits) ────────────────────────────
-// CRITICAL FIX: Endpoint is /mixed_people/search NOT /mixed_people/api_search
+// ─── 3. People search — FREE, no credits ──────────────────────────────────────
 
 export async function searchPeopleByTitles(params: {
   companyName: string
@@ -295,61 +274,48 @@ export async function searchPeopleByTitles(params: {
   titles: string[]
   seniorities?: string[]
 }): Promise<ApolloPerson[]> {
-  console.log('[Apollo] Searching people with params:', params)
+  console.log('[Apollo] People search:', params.companyName, '|', params.titles.slice(0, 2))
 
-  const requestBody: any = {
+  const qsParams: Record<string, string | string[] | number> = {
     person_titles: params.titles,
     organization_locations: ['Australia'],
     per_page: 10,
     page: 1,
   }
 
-  // CORRECTED: Use proper field names
   if (params.domain) {
-    requestBody.organization_domains = [params.domain] // CORRECTED: was q_organization_domains_list
+    qsParams['q_organization_domains_list'] = [params.domain]
   } else if (params.organizationId) {
-    requestBody.organization_ids = [params.organizationId]
+    qsParams['organization_ids'] = [params.organizationId]
   } else {
-    requestBody.organization_name = params.companyName // CORRECTED: was q_organization_name
+    qsParams['q_organization_name'] = params.companyName
   }
 
   if (params.seniorities?.length) {
-    requestBody.person_seniorities = params.seniorities
+    qsParams['person_seniorities'] = params.seniorities
   }
 
-  console.log('[Apollo] People search request body:', requestBody)
-
-  // CRITICAL FIX: Correct endpoint is /mixed_people/search
-  const res = await apolloFetch('/mixed_people/search', {
-    method: 'POST',
-    body: JSON.stringify(requestBody),
-  })
-
+  const res = await apolloFetch('/mixed_people/api_search', 'POST', buildQS(qsParams))
   const data = await res.json()
-  console.log('[Apollo] People search response:', {
-    total: data.people?.length ?? 0,
-    pagination: data.pagination,
-  })
-
   const people: any[] = data.people ?? []
 
-  const mapped = people.map(p => ({
+  console.log('[Apollo] Found', people.length, 'people')
+
+  return people.map(p => ({
     id: String(p.id ?? ''),
     name: String(p.name ?? `${p.first_name ?? ''} ${p.last_name ?? ''}`).trim(),
     firstName: String(p.first_name ?? ''),
     lastName: String(p.last_name ?? ''),
     title: String(p.title ?? ''),
     linkedinUrl: (p.linkedin_url as string) ?? null,
-    email: null, // Never returned by search endpoint
+    email: null,
     emailStatus: null,
+    phone: null,
     orgName: p.organization?.name ?? params.companyName,
   }))
-
-  console.log('[Apollo] Found people:', mapped.map(p => `${p.name} - ${p.title}`))
-  return mapped
 }
 
-// ─── 4. Enrich person by ID to get email (1 credit) ───────────────────────────
+// ─── 4. Enrich person by ID — 1 credit (email + direct dial) ──────────────────
 
 export async function enrichPersonById(personId: string): Promise<{
   email: string | null
@@ -357,30 +323,28 @@ export async function enrichPersonById(personId: string): Promise<{
   linkedinUrl: string | null
   name: string | null
   title: string | null
+  phone: string | null
 } | null> {
-  console.log('[Apollo] Enriching person by ID:', personId)
+  console.log('[Apollo] Enrich by ID:', personId)
 
   try {
-    const res = await apolloFetch('/people/match', {
-      method: 'POST',
-      body: JSON.stringify({
-        id: personId,
-        reveal_personal_emails: false,
-        reveal_phone_number: false,
-      }),
+    const qs = buildQS({
+      id: personId,
+      reveal_personal_emails: false,
+      reveal_phone_number: true,
     })
-    
+
+    const res = await apolloFetch('/people/match', 'POST', qs)
     const data = await res.json()
-    console.log('[Apollo] Person match response:', {
-      hasEmail: !!data.person?.email,
-      emailStatus: data.person?.email_status,
-    })
-    
     const p = data.person
+
     if (!p) {
-      console.log('[Apollo] No person data returned')
+      console.log('[Apollo] No person returned for ID:', personId)
       return null
     }
+
+    const phone = extractPhone(p)
+    console.log('[Apollo] Result: email=', !!p.email, '| phone=', !!phone)
 
     return {
       email: p.email ?? null,
@@ -388,14 +352,61 @@ export async function enrichPersonById(personId: string): Promise<{
       linkedinUrl: p.linkedin_url ?? null,
       name: p.name ?? null,
       title: p.title ?? null,
+      phone,
     }
   } catch (err) {
-    console.error('[Apollo] Person enrich error:', err instanceof Error ? err.message : err)
+    console.error('[Apollo] Enrich by ID failed:', err instanceof Error ? err.message : err)
     return null
   }
 }
 
-// ─── Legacy compatibility functions ────────────────────────────────────────────
+// ─── 5. Enrich by name + domain — 1 credit (fallback) ─────────────────────────
+
+export async function enrichPersonByNameDomain(
+  firstName: string,
+  lastName: string,
+  domain: string,
+  organizationName?: string,
+): Promise<{
+  email: string | null
+  emailStatus: string | null
+  linkedinUrl: string | null
+  name: string | null
+  title: string | null
+  phone: string | null
+} | null> {
+  console.log('[Apollo] Enrich name+domain:', firstName, lastName, '@', domain)
+
+  try {
+    const qs = buildQS({
+      first_name: firstName,
+      last_name: lastName,
+      domain,
+      ...(organizationName ? { organization_name: organizationName } : {}),
+      reveal_personal_emails: false,
+      reveal_phone_number: true,
+    })
+
+    const res = await apolloFetch('/people/match', 'POST', qs)
+    const data = await res.json()
+    const p = data.person
+    if (!p) return null
+
+    return {
+      email: p.email ?? null,
+      emailStatus: p.email_status ?? null,
+      linkedinUrl: p.linkedin_url ?? null,
+      name: p.name ?? null,
+      title: p.title ?? null,
+      phone: extractPhone(p),
+    }
+  } catch (err) {
+    console.error('[Apollo] Name+domain enrich failed:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// ─── Legacy compatibility ──────────────────────────────────────────────────────
 
 export async function searchPeople(query: {
   name?: string
@@ -403,82 +414,65 @@ export async function searchPeople(query: {
   title?: string
   location?: string
 }): Promise<ApolloContact[]> {
-  console.log('[Apollo] Legacy searchPeople called:', query)
+  const qsParams: Record<string, string | string[] | number> = { per_page: 5, page: 1 }
+  if (query.company)  qsParams['q_organization_name']    = query.company
+  if (query.name)     qsParams['q_keywords']             = query.name
+  if (query.title)    qsParams['person_titles']          = [query.title]
+  if (query.location) qsParams['organization_locations'] = [query.location]
 
-  const requestBody: any = {
-    per_page: 5,
-    page: 1,
-  }
-
-  // CORRECTED field names
-  if (query.company) requestBody.organization_name = query.company
-  if (query.name) requestBody.q_keywords = query.name
-  if (query.title) requestBody.person_titles = [query.title]
-  if (query.location) requestBody.organization_locations = [query.location]
-
-  const res = await apolloFetch('/mixed_people/search', {
-    method: 'POST',
-    body: JSON.stringify(requestBody),
-  })
-
+  const res = await apolloFetch('/mixed_people/api_search', 'POST', buildQS(qsParams))
   const data = await res.json()
-  const people: any[] = data.people ?? []
 
-  return people.map(p => ({
+  return (data.people ?? []).map((p: any) => ({
     id: p.id,
-    firstName: p.first_name,
-    lastName: p.last_name,
+    firstName: p.first_name ?? '',
+    lastName: p.last_name ?? '',
     name: p.name ?? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
-    title: p.title,
+    title: p.title ?? '',
     email: null,
     phone: null,
     linkedinUrl: p.linkedin_url ?? null,
-    organization: p.organization ? {
-      id: p.organization.id,
-      name: p.organization.name,
-      websiteUrl: p.organization.website_url ?? null,
-      linkedinUrl: p.organization.linkedin_url ?? null,
-      estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
-    } : null,
+    organization: p.organization
+      ? {
+          id: p.organization.id,
+          name: p.organization.name,
+          websiteUrl: p.organization.website_url ?? null,
+          linkedinUrl: p.organization.linkedin_url ?? null,
+          estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
+        }
+      : null,
   }))
 }
 
 export async function enrichPerson(email: string): Promise<ApolloEnrichedContact | null> {
-  console.log('[Apollo] Legacy enrichPerson called:', email)
-
   try {
-    const res = await apolloFetch('/people/match', {
-      method: 'POST',
-      body: JSON.stringify({
-        email,
-        reveal_personal_emails: false,
-        reveal_phone_number: false,
-      }),
-    })
-    
+    const qs = buildQS({ email, reveal_personal_emails: false, reveal_phone_number: false })
+    const res = await apolloFetch('/people/match', 'POST', qs)
     const data = await res.json()
     const p = data.person
     if (!p) return null
 
     return {
       id: p.id,
-      firstName: p.first_name,
-      lastName: p.last_name,
-      name: p.name,
-      title: p.title,
+      firstName: p.first_name ?? '',
+      lastName: p.last_name ?? '',
+      name: p.name ?? '',
+      title: p.title ?? '',
       email: p.email ?? null,
-      phone: null,
+      phone: p.phone ?? null,
       linkedinUrl: p.linkedin_url ?? null,
       emailStatus: p.email_status ?? null,
       city: p.city ?? null,
       country: p.country ?? null,
-      organization: p.organization ? {
-        id: p.organization.id,
-        name: p.organization.name,
-        websiteUrl: p.organization.website_url ?? null,
-        linkedinUrl: p.organization.linkedin_url ?? null,
-        estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
-      } : null,
+      organization: p.organization
+        ? {
+            id: p.organization.id,
+            name: p.organization.name,
+            websiteUrl: p.organization.website_url ?? null,
+            linkedinUrl: p.organization.linkedin_url ?? null,
+            estimatedNumEmployees: p.organization.estimated_num_employees ?? null,
+          }
+        : null,
     }
   } catch {
     return null
