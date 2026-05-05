@@ -8,7 +8,8 @@ export interface ScrapeConfig {
   minAgeDays: number
   maxResults?: number
   offset?: number
-  salesOnly?: boolean   // ⭐ ADD THIS LINE
+  salesOnly?: boolean
+  filterOlderThan7Days?: boolean   // ⭐ NEW — drives daterange + auto-skip logic
 }
 
 export interface ScrapeRun {
@@ -34,7 +35,7 @@ export interface RawSeekJob {
   title: string
   jobLink: string
   applyLink: string
-  
+
   // Advertiser/Company info
   advertiser: {
     id: string
@@ -44,7 +45,7 @@ export interface RawSeekJob {
     isPrivate: boolean
     registrationDate: string
   }
-  
+
   // Company Profile (rich data)
   companyProfile: {
     id: string
@@ -61,7 +62,7 @@ export interface RawSeekJob {
   }
   companyOpenJobs: string
   companyTags: string[]
-  
+
   // Location info
   joblocationInfo: {
     area: string
@@ -71,22 +72,22 @@ export interface RawSeekJob {
     countryCode: string
     suburb: string
   }
-  
+
   // Dates
   listedAt: string
   expiresAtUtc: string
-  
+
   // Classification
   classificationInfo: {
     classification: string
     subClassification: string
   }
-  
+
   // Salary & Work details
   salary: string
   workTypes: string[]
   workArrangements: string[]
-  
+
   // Content
   content: {
     bulletPoints: string[]
@@ -94,22 +95,22 @@ export interface RawSeekJob {
     unEditedContent: string
     sections: string[]
   }
-  
+
   // Flags
   isVerified: boolean
   isExternalApply: boolean
   hasRoleRequirements: boolean
-  
+
   // Contact info (extracted by the actor!)
   emails: string[]
   phoneNumbers: string[]
-  
+
   // Applicant metrics
   numApplicants: string
-  
+
   // Video
   employerVideo: string | null
-  
+
   // Recruiter info (if applicable)
   recruiterProfile: {
     name: string
@@ -128,14 +129,14 @@ export interface RawSeekJob {
     placementCount: number
   }
   recruiterSpecialisations: string[]
-  
+
   // Employer questions
   employerQuestions: any[]
-  
+
   // Percentage requirements
   coverLetterPercentage: number
   resumePercentage: number
-  
+
   // For backward compatibility with existing code
   companyName?: string
   companyWebsite?: string

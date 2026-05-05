@@ -29,6 +29,16 @@ export interface ScraperMetrics {
   elapsedSeconds: number
 }
 
+// ─── When filterOlderThan7Days is ON and the user hasn't set a manual skip,
+//     automatically skip this many pages so we land in the older-jobs zone.
+//
+//     Why 10?  Seek Sales category in major AU cities sees ~15–25 new listings
+//     per day.  7 days × ~20/day ≈ 140 new jobs ≈ 7 pages of 20.
+//     Skipping 10 pages (200 jobs) lands us safely past the "all fresh" zone
+//     while still fetching a full batch of older results.
+// ──────────────────────────────────────────────────────────────────────────────
+const AUTO_SKIP_PAGES_FOR_OLDER_JOBS = 10
+
 // ─── Sanitize "N/A" strings that Apify returns ────────────────────────────────
 function sanitize(value: string | null | undefined): string | null {
   if (!value) return null
@@ -81,23 +91,19 @@ function isValidContactName(name: string | null): string | null {
 }
 
 export function useScraper() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [jobs, setJobs] = useState<JobResult[]>([])
-  const [logs, setLogs] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
+  const [isLoading,      setIsLoading]      = useState(false)
+  const [isLoadingMore,  setIsLoadingMore]  = useState(false)
+  const [jobs,           setJobs]           = useState<JobResult[]>([])
+  const [logs,           setLogs]           = useState<string[]>([])
+  const [error,          setError]          = useState<string | null>(null)
+  const [currentPage,    setCurrentPage]    = useState(1)
   const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [currentOffset, setCurrentOffset] = useState(0)
-  const [salesOnly, setSalesOnly] = useState(true)
-  const [scraperStep, setScraperStep] = useState<ScraperStep>('idle')
-  const [metrics, setMetrics] = useState<ScraperMetrics>({
-    totalRaw: 0,
-    validLeads: 0,
-    filteredOut: 0,
-    stepStartedAt: null,
-    elapsedSeconds: 0,
+  const [hasMore,        setHasMore]        = useState(false)
+  const [currentOffset,  setCurrentOffset]  = useState(0)
+  const [salesOnly,      setSalesOnly]      = useState(true)
+  const [scraperStep,    setScraperStep]    = useState<ScraperStep>('idle')
+  const [metrics,        setMetrics]        = useState<ScraperMetrics>({
+    totalRaw: 0, validLeads: 0, filteredOut: 0, stepStartedAt: null, elapsedSeconds: 0,
   })
   const [lastSearchParams, setLastSearchParams] = useState<{
     jobTitles: string[]
@@ -123,29 +129,28 @@ export function useScraper() {
     _minAgeDays: number = 0,
     filterSalesOnly: boolean = true
   ): { passed: JobResult[]; filteredRecords: FilteredJobRecord[] } => {
-    const jobsMap = new Map<string, JobResult>()
+    const jobsMap        = new Map<string, JobResult>()
     const filteredRecords: FilteredJobRecord[] = []
-
     const counts: Record<string, number> = {}
     const inc = (cat: string) => { counts[cat] = (counts[cat] || 0) + 1 }
 
     for (const job of rawResults) {
-      const companyName = job.advertiser?.name || job.companyName || 'Unknown Company'
-      const advertiserName = job.advertiser?.name || ''
-      const jobTitle = job.title || 'Unknown Position'
-      const classification = job.classificationInfo?.classification || job.classification || ''
+      const companyName     = job.advertiser?.name || job.companyName || 'Unknown Company'
+      const advertiserName  = job.advertiser?.name || ''
+      const jobTitle        = job.title || 'Unknown Position'
+      const classification  = job.classificationInfo?.classification || job.classification || ''
       const subClassification = job.classificationInfo?.subClassification || job.subClassification || ''
-      const description = job.content?.unEditedContent || job.content?.jobHook || ''
-      const jobLink = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
+      const description     = job.content?.unEditedContent || job.content?.jobHook || ''
+      const jobLink         = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
 
-      const companyWebsite = sanitize(job.companyProfile?.website || job.companyWebsite || null)
+      const companyWebsite  = sanitize(job.companyProfile?.website || job.companyWebsite || null)
       const companyIndustry = sanitize(job.companyProfile?.industry || null)
-      const companySize = sanitize(job.companyProfile?.size || null)
-      const companyRating = sanitizeNumber(job.companyProfile?.rating)
+      const companySize     = sanitize(job.companyProfile?.size || null)
+      const companyRating   = sanitizeNumber(job.companyProfile?.rating)
       const companyOverview = sanitize(job.companyProfile?.overview || null)
-      const companyId = sanitize(job.advertiser?.id || job.companyProfile?.id || null)
-      const isVerified = job.advertiser?.isVerified || job.isVerified || false
-      const companyLogo = sanitize(job.advertiser?.logo || null)
+      const companyId       = sanitize(job.advertiser?.id || job.companyProfile?.id || null)
+      const isVerified      = job.advertiser?.isVerified || job.isVerified || false
+      const companyLogo     = sanitize(job.advertiser?.logo || null)
 
       const { shouldFilter, verdict } = runAllFilters({
         companyName,
@@ -163,12 +168,9 @@ export function useScraper() {
       if (shouldFilter) {
         inc(verdict.category)
         filteredRecords.push({
-          companyName,
-          jobTitle,
-          reason: verdict.reason,
-          category: verdict.category,
-          confidence: verdict.confidence,
-          jobLink,
+          companyName, jobTitle,
+          reason: verdict.reason, category: verdict.category,
+          confidence: verdict.confidence, jobLink,
         })
         continue
       }
@@ -176,22 +178,19 @@ export function useScraper() {
       if (!companyName || companyName === 'Unknown Company') {
         inc('no_company_name')
         filteredRecords.push({
-          companyName: jobTitle,
-          jobTitle,
-          reason: 'No company name available',
-          category: 'no_company_name',
-          confidence: 100,
-          jobLink,
+          companyName: jobTitle, jobTitle,
+          reason: 'No company name available', category: 'no_company_name',
+          confidence: 100, jobLink,
         })
         continue
       }
 
-      const jobLocationInfo = job.joblocationInfo
-      const fullLocation = jobLocationInfo?.displayLocation || job.location || 'Location not specified'
-      const stateMatch = fullLocation.match(/\b(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\b/)
-      const state = stateMatch?.[1] || ''
-      const country = jobLocationInfo?.country || 'Australia'
-      const city =
+      const jobLocationInfo  = job.joblocationInfo
+      const fullLocation     = jobLocationInfo?.displayLocation || job.location || 'Location not specified'
+      const stateMatch       = fullLocation.match(/\b(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\b/)
+      const state            = stateMatch?.[1] || ''
+      const country          = jobLocationInfo?.country || 'Australia'
+      const city             =
         jobLocationInfo?.suburb ||
         (jobLocationInfo?.displayLocation
           ? jobLocationInfo.displayLocation.split(' ').slice(0, -1).join(' ')
@@ -200,21 +199,20 @@ export function useScraper() {
         fullLocation.split(',')[0] ||
         ''
 
-      const apifyEmailsRaw = (job.emails || []).filter((e) => e && e !== 'N/A')
-      const apifyEmailsFiltered =
-        apifyEmailsRaw.length > 0 ? extractEmails(apifyEmailsRaw.join(' ')) : []
-      const descEmails = extractEmails(description)
-      const emails = [...new Set([...apifyEmailsFiltered, ...descEmails])]
+      const apifyEmailsRaw      = (job.emails || []).filter((e) => e && e !== 'N/A')
+      const apifyEmailsFiltered = apifyEmailsRaw.length > 0 ? extractEmails(apifyEmailsRaw.join(' ')) : []
+      const descEmails          = extractEmails(description)
+      const emails              = [...new Set([...apifyEmailsFiltered, ...descEmails])]
 
-      const apifyPhones = (job.phoneNumbers || []).filter((p) => p && p !== 'N/A')
-      const descPhones = extractPhones(description)
-      const phones = [...new Set([...apifyPhones, ...descPhones])]
+      const apifyPhones  = (job.phoneNumbers || []).filter((p) => p && p !== 'N/A')
+      const descPhones   = extractPhones(description)
+      const phones       = [...new Set([...apifyPhones, ...descPhones])]
 
       const rawContactName = extractContactName(description)
-      const contactName = isValidContactName(rawContactName)
+      const contactName    = isValidContactName(rawContactName)
 
-      let formattedDate = 'Recently posted'
-      const datePostedRaw = job.listedAt || ''
+      let formattedDate    = 'Recently posted'
+      const datePostedRaw  = job.listedAt || ''
       if (datePostedRaw) {
         try {
           const date = new Date(datePostedRaw)
@@ -229,20 +227,19 @@ export function useScraper() {
       const salary = sanitize(job.salary || null)
 
       let workType: string | null = null
-      if (Array.isArray(job.workTypes)) workType = sanitize(job.workTypes[0])
+      if (Array.isArray(job.workTypes))       workType = sanitize(job.workTypes[0])
       else if (typeof job.workTypes === 'string') workType = sanitize(job.workTypes)
 
       let workArrangement: string | null = null
-      if (Array.isArray(job.workArrangements)) workArrangement = sanitize(job.workArrangements[0])
+      if (Array.isArray(job.workArrangements))       workArrangement = sanitize(job.workArrangements[0])
       else if (typeof job.workArrangements === 'string') workArrangement = sanitize(job.workArrangements)
 
       let numApplicants: string | null = null
       if (job.numApplicants && job.numApplicants !== 'N/A') numApplicants = job.numApplicants
 
-      const applyLink = job.applyLink || jobLink
-      const companySlug = sanitize(job.companyProfile?.companyNameSlug || null)
-      const companyProfileLink = companySlug
-        ? `https://www.seek.com.au/companies/${companySlug}` : null
+      const applyLink           = job.applyLink || jobLink
+      const companySlug         = sanitize(job.companyProfile?.companyNameSlug || null)
+      const companyProfileLink  = companySlug ? `https://www.seek.com.au/companies/${companySlug}` : null
       const companyNumberOfReviews = sanitizeNumber(job.companyProfile?.numberOfReviews)
       const companyPerksAndBenefits = sanitize(job.companyProfile?.perksAndBenefits || null)
 
@@ -309,13 +306,30 @@ export function useScraper() {
         setIsLoadingMore(true)
       }
 
+      // ⭐ AUTO-SKIP LOGIC
+      // When the user wants 7+ day old jobs and hasn't manually set a skip,
+      // automatically skip AUTO_SKIP_PAGES_FOR_OLDER_JOBS pages to jump past
+      // the freshest listings (Seek returns newest first).
+      const effectiveSkipPages =
+        filterOlderThan7Days && !isLoadMore && skipPages === 0
+          ? AUTO_SKIP_PAGES_FOR_OLDER_JOBS
+          : skipPages
+
       if (!isLoadMore) {
         addLog(`🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`)
         addLog(`📍 Location: ${city === 'Australia' ? 'All Australia' : city}`)
         addLog(`📊 Requesting up to ${maxResults} results per job title`)
-        addLog(`🎯 Sales classification filter: Applied at Seek URL level`)
-        if (filterOlderThan7Days) addLog(`🕐 Age filter: Tracking jobs < 7 days old for history`)
-        if (skipPages > 0) addLog(`⏩ Skip mode: offset=${skipPages * 20} jobs`)
+        addLog(`🎯 Sales classification filter: Applied at Seek URL level (classification=1201)`)
+
+        if (filterOlderThan7Days) {
+          addLog(`🕐 Age filter: 7+ days only — daterange=31 applied, fresh jobs will be hidden`)
+          if (skipPages === 0 && effectiveSkipPages > 0) {
+            addLog(`⏩ Auto-skip: skipping first ${effectiveSkipPages} pages (${effectiveSkipPages * 20} newest jobs) to reach older listings`)
+          }
+        }
+        if (skipPages > 0) {
+          addLog(`⏩ Manual skip mode: offset=${effectiveSkipPages * 20} jobs`)
+        }
         if (minAgeDays > 0) addLog(`📅 Date filter: last ${minAgeDays} days`)
       } else {
         addLog(`🔄 Loading more results...`)
@@ -338,8 +352,9 @@ export function useScraper() {
             roleQuery: jobTitle,
             minAgeDays,
             maxResults,
-            offset: skipPages,
+            offset: effectiveSkipPages,   // ⭐ effective (auto or manual) skip
             salesOnly: salesOnlyFilter,
+            filterOlderThan7Days,         // ⭐ passed through to URL builder
           }
           addLog(`  🔍 Searching: "${jobTitle}"`)
           try {
@@ -372,8 +387,8 @@ export function useScraper() {
           }
         })
 
-        const results = await Promise.all(searchPromises)
-        const allRawJobs = results.flat()
+        const results     = await Promise.all(searchPromises)
+        const allRawJobs  = results.flat()
 
         updateMetrics({ totalRaw: allRawJobs.length })
         addLog(`📦 Total raw jobs: ${allRawJobs.length} — running filters...`)
@@ -385,8 +400,6 @@ export function useScraper() {
         )
 
         // ─── Track age-filtered jobs in history ──────────────────────────
-        // If 7+ days filter is on, jobs that are too fresh get logged with
-        // reason "too_new" so they appear in scraper history.
         let historyFilteredRecords: FilteredJobRecord[] = [...filteredRecords]
         if (filterOlderThan7Days) {
           const today = new Date()
@@ -402,11 +415,11 @@ export function useScraper() {
                 : `${daysOld} day${daysOld !== 1 ? 's' : ''} ago`
               historyFilteredRecords.push({
                 companyName: job.companyName,
-                jobTitle: job.jobTitle,
-                reason: `Posted ${ageLabel} — hidden by "7+ days only" display filter`,
-                category: 'too_new',
-                confidence: 100,
-                jobLink: job.jobLink ?? undefined,
+                jobTitle:    job.jobTitle,
+                reason:      `Posted ${ageLabel} — hidden by "7+ days only" display filter`,
+                category:    'too_new',
+                confidence:  100,
+                jobLink:     job.jobLink ?? undefined,
               })
               ageFilteredCount++
             }
@@ -418,8 +431,8 @@ export function useScraper() {
 
         const elapsed = Math.round((Date.now() - startedAt) / 1000)
         updateMetrics({
-          totalRaw: allRawJobs.length,
-          validLeads: processedJobs.length,
+          totalRaw:    allRawJobs.length,
+          validLeads:  processedJobs.length,
           filteredOut: filteredRecords.length,
           elapsedSeconds: elapsed,
         })
@@ -435,11 +448,11 @@ export function useScraper() {
 
           if (historyId) {
             await updateScraperHistory(historyId, {
-              status: 'completed',
-              jobs_found: allRawJobs.length,
-              jobs_passed: processedJobs.length,
+              status:        'completed',
+              jobs_found:    allRawJobs.length,
+              jobs_passed:   processedJobs.length,
               jobs_filtered: historyFilteredRecords.length,
-              completed_at: new Date().toISOString(),
+              completed_at:  new Date().toISOString(),
               filtered_jobs: historyFilteredRecords,
             })
           }
@@ -448,7 +461,7 @@ export function useScraper() {
           setScraperStep('done')
         } else {
           const existingUrls = new Set(jobs.map((j) => j.jobLink))
-          const newJobs = processedJobs.filter((j) => !existingUrls.has(j.jobLink))
+          const newJobs      = processedJobs.filter((j) => !existingUrls.has(j.jobLink))
           setJobs((prev) => [...prev, ...newJobs])
           setHasMore(processedJobs.length >= maxResults * jobTitles.length)
           setCurrentOffset(offset + maxResults)
@@ -464,15 +477,15 @@ export function useScraper() {
         if (currentHistoryId) {
           try {
             await updateScraperHistory(currentHistoryId, {
-              status: 'failed',
+              status:        'failed',
               error_message: message,
-              completed_at: new Date().toISOString(),
+              completed_at:  new Date().toISOString(),
             })
           } catch { /* ignore */ }
         }
       } finally {
         if (!isLoadMore) setIsLoading(false)
-        else setIsLoadingMore(false)
+        else             setIsLoadingMore(false)
       }
     },
     [addLog, updateMetrics, currentHistoryId, jobs]

@@ -14,6 +14,7 @@ import {
   X,
   Clock,
   Filter,
+  Info,
 } from 'lucide-react'
 import { Card, CardHeader, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -39,9 +40,14 @@ interface ScraperControlsProps {
   filterOlderThan7Days?: boolean
 }
 
+// How many pages useScraper auto-skips when filterOlderThan7Days=true and
+// no manual skip is set — keep in sync with AUTO_SKIP_PAGES_FOR_OLDER_JOBS
+// in useScraper.ts
+const AUTO_SKIP_PAGES = 10
+
 const SKIP_OPTIONS = [
-  { value: 0, label: 'Newest', desc: 'Page 1' },
-  { value: 5, label: 'Skip 5', desc: '~100 jobs' },
+  { value: 0,  label: 'Newest',  desc: 'Page 1' },
+  { value: 5,  label: 'Skip 5',  desc: '~100 jobs' },
   { value: 10, label: 'Skip 10', desc: '~200 jobs' },
   { value: 15, label: 'Skip 15', desc: '~300 jobs' },
   { value: 20, label: 'Skip 20', desc: '~400 jobs' },
@@ -49,8 +55,8 @@ const SKIP_OPTIONS = [
 ]
 
 const DATE_OPTIONS = [
-  { value: 0, label: 'All time' },
-  { value: 7, label: '7 days' },
+  { value: 0,  label: 'All time' },
+  { value: 7,  label: '7 days' },
   { value: 14, label: '14 days' },
   { value: 21, label: '21 days' },
   { value: 30, label: '30 days' },
@@ -73,23 +79,23 @@ export function ScraperControls({
   onFilterOlderThan7DaysChange,
   filterOlderThan7Days = true,
 }: ScraperControlsProps) {
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([JOB_ROLES[0]])
-  const [customRoles, setCustomRoles] = useState<string[]>([])
-  const [currentCustomRole, setCurrentCustomRole] = useState('')
-  const [useCustomRoles, setUseCustomRoles] = useState(false)
-  const [selectedCity, setSelectedCity] = useState('Australia')
-  const [customCity, setCustomCity] = useState('')
-  const [useCustomCity, setUseCustomCity] = useState(false)
-  const [maxResultsPerRun, setMaxResultsPerRun] = useState(20)
-  const [skipPages, setSkipPages] = useState(0)
-  const [minAgeDays, setMinAgeDays] = useState(0)
-  const [salesOnly, setSalesOnly] = useState(true)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [selectedRoles,       setSelectedRoles]       = useState<string[]>([JOB_ROLES[0]])
+  const [customRoles,         setCustomRoles]         = useState<string[]>([])
+  const [currentCustomRole,   setCurrentCustomRole]   = useState('')
+  const [useCustomRoles,      setUseCustomRoles]      = useState(false)
+  const [selectedCity,        setSelectedCity]        = useState('Australia')
+  const [customCity,          setCustomCity]          = useState('')
+  const [useCustomCity,       setUseCustomCity]       = useState(false)
+  const [maxResultsPerRun,    setMaxResultsPerRun]    = useState(20)
+  const [skipPages,           setSkipPages]           = useState(0)
+  const [minAgeDays,          setMinAgeDays]          = useState(0)
+  const [salesOnly,           setSalesOnly]           = useState(true)
+  const [showAdvanced,        setShowAdvanced]        = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const jobTitles = useCustomRoles ? customRoles : selectedRoles
-    const city = useCustomCity ? customCity : selectedCity
+    const city      = useCustomCity  ? customCity  : selectedCity
     if (jobTitles.length === 0 || !city.trim()) return
     onStart(jobTitles, city.trim(), maxResultsPerRun, skipPages, minAgeDays, salesOnly)
   }
@@ -105,12 +111,15 @@ export function ScraperControls({
     setCustomRoles(customRoles.filter((r) => r !== role))
   }
 
-  const getAllJobTitles = () => (useCustomRoles ? customRoles : selectedRoles)
-  const getCityDisplay = () => {
+  const getAllJobTitles  = () => (useCustomRoles ? customRoles : selectedRoles)
+  const getCityDisplay  = () => {
     if (useCustomCity) return customCity || 'Not set'
     return selectedCity === 'Australia' ? 'All Australia' : selectedCity
   }
   const canSubmit = !isLoading && getAllJobTitles().length > 0 && !(useCustomCity && !customCity.trim())
+
+  // Whether the auto-skip will kick in this run
+  const autoSkipActive = filterOlderThan7Days && skipPages === 0
 
   return (
     <Card className="overflow-hidden border border-slate-200 dark:border-slate-700 shadow-lg">
@@ -138,7 +147,7 @@ export function ScraperControls({
       <CardBody className="pt-6 bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
         <form onSubmit={handleSubmit} className="space-y-6">
 
-          {/* Job Roles */}
+          {/* ── Job Roles ──────────────────────────────────────────────────── */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
@@ -146,28 +155,23 @@ export function ScraperControls({
                 Job Titles
               </label>
               <div className="flex gap-0.5 bg-slate-200/80 dark:bg-slate-700/80 rounded-lg p-0.5 backdrop-blur-sm">
-                <button
-                  type="button"
-                  onClick={() => setUseCustomRoles(false)}
-                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                    !useCustomRoles
-                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Preset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseCustomRoles(true)}
-                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                    useCustomRoles
-                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Custom
-                </button>
+                {['Preset', 'Custom'].map((label) => {
+                  const isActive = label === 'Preset' ? !useCustomRoles : useCustomRoles
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setUseCustomRoles(label === 'Custom')}
+                      className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
+                        isActive
+                          ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
@@ -188,7 +192,7 @@ export function ScraperControls({
                     {customRoles.map((role) => (
                       <span
                         key={role}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md"
                       >
                         {role}
                         <button
@@ -228,7 +232,7 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* Location */}
+          {/* ── Location ───────────────────────────────────────────────────── */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
@@ -236,28 +240,23 @@ export function ScraperControls({
                 Location
               </label>
               <div className="flex gap-0.5 bg-slate-200/80 dark:bg-slate-700/80 rounded-lg p-0.5 backdrop-blur-sm">
-                <button
-                  type="button"
-                  onClick={() => setUseCustomCity(false)}
-                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                    !useCustomCity
-                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Preset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseCustomCity(true)}
-                  className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
-                    useCustomCity
-                      ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Custom
-                </button>
+                {['Preset', 'Custom'].map((label) => {
+                  const isActive = label === 'Preset' ? !useCustomCity : useCustomCity
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setUseCustomCity(label === 'Custom')}
+                      className={`px-3 py-1.5 text-xs rounded-md font-semibold transition-all ${
+                        isActive
+                          ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-md scale-105'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
@@ -289,13 +288,13 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* Age Filter Toggle */}
+          {/* ── Age Filter Toggle ──────────────────────────────────────────── */}
           <div className="space-y-3">
             <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
               <Filter className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               Display Filter
             </label>
-            
+
             <div className="relative overflow-hidden rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-900/20 dark:via-slate-800 dark:to-blue-900/20 shadow-md">
               <div className="relative p-4">
                 <button
@@ -306,37 +305,31 @@ export function ScraperControls({
                 >
                   <div className="flex items-center gap-3 flex-1">
                     <div className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
-                      filterOlderThan7Days 
-                        ? 'bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg shadow-blue-500/50' 
+                      filterOlderThan7Days
+                        ? 'bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg shadow-blue-500/50'
                         : 'bg-slate-300 dark:bg-slate-600'
                     }`}>
                       <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-md transition-all duration-300 ${
                         filterOlderThan7Days ? 'translate-x-5' : 'translate-x-0'
                       }`} />
                     </div>
-                    
+
                     <div className="flex-1 text-left">
                       <div className="flex items-center gap-2">
                         <Clock className={`w-4 h-4 transition-colors ${
-                          filterOlderThan7Days 
-                            ? 'text-blue-600 dark:text-blue-400' 
-                            : 'text-slate-400'
+                          filterOlderThan7Days ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'
                         }`} />
                         <span className={`text-sm font-bold transition-colors ${
-                          filterOlderThan7Days 
-                            ? 'text-blue-900 dark:text-blue-100' 
-                            : 'text-slate-600 dark:text-slate-400'
+                          filterOlderThan7Days ? 'text-blue-900 dark:text-blue-100' : 'text-slate-600 dark:text-slate-400'
                         }`}>
                           Show only jobs 7+ days old
                         </span>
                       </div>
                       <p className={`text-xs mt-1 transition-colors ${
-                        filterOlderThan7Days 
-                          ? 'text-blue-700 dark:text-blue-300' 
-                          : 'text-slate-500 dark:text-slate-500'
+                        filterOlderThan7Days ? 'text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-500'
                       }`}>
-                        {filterOlderThan7Days 
-                          ? '✓ Filtering out fresh jobs — showing seasoned opportunities only' 
+                        {filterOlderThan7Days
+                          ? '✓ Filtering out fresh jobs — showing seasoned opportunities only'
                           : '○ Showing all jobs regardless of age'}
                       </p>
                     </div>
@@ -352,21 +345,33 @@ export function ScraperControls({
                 </button>
 
                 {filterOlderThan7Days && (
-                  <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800">
+                  <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800 space-y-2">
                     <div className="flex items-start gap-2 text-xs">
                       <span className="text-blue-600 dark:text-blue-400 font-bold">ℹ️</span>
                       <p className="text-blue-700 dark:text-blue-300 leading-relaxed">
-                        Jobs posted within the last 7 days will be hidden from results. 
-                        This helps you focus on positions that have been open longer and may be harder to fill.
+                        Jobs posted within the last 7 days will be hidden from results.
+                        This helps you focus on positions that have been open longer.
                       </p>
                     </div>
+
+                    {/* ⭐ Auto-skip notice */}
+                    {autoSkipActive && (
+                      <div className="flex items-start gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs">
+                        <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                        <p className="text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                          <span className="font-bold">Auto-skip active:</span> the scraper will automatically
+                          skip the first {AUTO_SKIP_PAGES} pages ({AUTO_SKIP_PAGES * 20} newest jobs) so your
+                          results land in the older-jobs zone. Set a manual skip below to override this.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Sales Classification Toggle */}
+          {/* ── Sales Classification Toggle ────────────────────────────────── */}
           <div className="space-y-3">
             <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
               Classification Filter
@@ -399,7 +404,7 @@ export function ScraperControls({
             </div>
           </div>
 
-          {/* Max Results */}
+          {/* ── Max Results ────────────────────────────────────────────────── */}
           <div className="space-y-3">
             <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
               Results Per Job Title
@@ -423,7 +428,7 @@ export function ScraperControls({
             </div>
           </div>
 
-          {/* Advanced Options */}
+          {/* ── Advanced Options ───────────────────────────────────────────── */}
           <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800 shadow-md">
             <button
               type="button"
@@ -438,6 +443,11 @@ export function ScraperControls({
                     Active
                   </span>
                 )}
+                {filterOlderThan7Days && skipPages === 0 && (
+                  <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-semibold">
+                    Auto-skip {AUTO_SKIP_PAGES}p
+                  </span>
+                )}
               </div>
               {showAdvanced
                 ? <ChevronUp className="w-4 h-4 text-slate-500 dark:text-slate-400" />
@@ -447,12 +457,22 @@ export function ScraperControls({
 
             {showAdvanced && (
               <div className="p-4 space-y-4 border-t-2 border-slate-200 dark:border-slate-700 bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800">
+
                 {/* Skip Pages */}
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
                     <SkipForward className="w-3.5 h-3.5" />
                     Skip Pages (older jobs)
                   </label>
+
+                  {/* Auto-skip override note */}
+                  {filterOlderThan7Days && (
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-2">
+                      💡 "7+ days" is ON — selecting any value here overrides the auto-skip of {AUTO_SKIP_PAGES} pages.
+                      Choose "Newest" to restore auto-skip behaviour.
+                    </p>
+                  )}
+
                   <div className="grid grid-cols-3 gap-2">
                     {SKIP_OPTIONS.map((opt) => (
                       <button
@@ -467,10 +487,13 @@ export function ScraperControls({
                         disabled={isLoading}
                       >
                         <div className="font-bold">{opt.label}</div>
-                        <div className={`text-xs mt-0.5 ${skipPages === opt.value ? 'text-amber-100' : 'text-slate-500 dark:text-slate-500'}`}>{opt.desc}</div>
+                        <div className={`text-xs mt-0.5 ${skipPages === opt.value ? 'text-amber-100' : 'text-slate-500 dark:text-slate-500'}`}>
+                          {opt.desc}
+                        </div>
                       </button>
                     ))}
                   </div>
+
                   {skipPages > 0 && (
                     <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 font-medium">
                       ⏩ Will skip first {skipPages * 20} jobs and fetch the next {maxResultsPerRun}
@@ -506,7 +529,7 @@ export function ScraperControls({
             )}
           </div>
 
-          {/* Active Filters badges */}
+          {/* ── Active Filters badges ──────────────────────────────────────── */}
           <div className="flex flex-wrap gap-2">
             {FILTER_BADGES.map((f) => (
               <span
@@ -518,7 +541,7 @@ export function ScraperControls({
             ))}
           </div>
 
-          {/* Summary Bar */}
+          {/* ── Summary Bar ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 rounded-xl border-2 border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex-wrap shadow-inner">
             <span className="font-bold text-slate-900 dark:text-white">Search:</span>
             <span className="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full font-semibold shadow-md">
@@ -539,12 +562,12 @@ export function ScraperControls({
             )}
             {filterOlderThan7Days && (
               <span className="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-full font-semibold shadow-md">
-                7+ days only
+                7+ days only {autoSkipActive ? `(auto-skip ${AUTO_SKIP_PAGES}p)` : ''}
               </span>
             )}
           </div>
 
-          {/* Submit Button */}
+          {/* ── Submit Button ───────────────────────────────────────────────── */}
           <Button
             type="submit"
             isLoading={isLoading}

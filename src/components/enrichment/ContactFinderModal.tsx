@@ -525,10 +525,14 @@ export function ContactFinderModal({
       contactTitle:       e.result.contactTitle,
       contactLinkedinUrl: e.result.contactLinkedinUrl,
       contactEmail:       e.result.contactEmail,
+      emailStatus:        e.result.emailStatus,        // Added missing field
+      emailSource:        e.result.emailSource,        // Added missing field
       employeeCount:      e.result.employeeCount,
       companyLinkedinUrl: e.result.companyLinkedinUrl,
       companyWebsite:     e.result.companyWebsite,
+      companyPhone:       e.result.companyPhone,       // Added missing field
       industry:           e.result.industry,
+      candidateScore:     e.result.candidateScore,     // Added missing field
     })))
   }, [entries, decisions, onConfirm])
 

@@ -1,19 +1,16 @@
 /**
- * CONTACT PICKER UTILITIES
- * ─────────────────────────────────────────────────────────────────────────────
- * Defines priority title groups for Apollo people search based on company size.
- * Used in Phase 3 (finding_contact) of the contact finder pipeline.
+ * CONTACT PICKER
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Defines priority title groups for Apollo people search.
+ * Groups are tried in order — first group with results wins.
  *
- * LOGIC:
- *   Tiny  (1-10)   → Owner / Founder / MD (they handle everything)
- *   Small (11-50)  → HR Manager / Office Manager → GM / Director fallback
- *   Mid   (51-200) → HR Manager / P&C Manager / Talent Acquisition → HR Director
- *   Large (201-500)→ Talent Acquisition / HR Manager / HR Director
+ * RECRUITMENT AGENCY PRIORITY (for finding hiring decision makers):
+ *   Tiny  (1–10)   → Owner / MD / Founder
+ *   Small (11–50)  → HR Manager / Office Manager → GM → Owner
+ *   Mid   (51–200) → HR Manager / P&C → HR Director → GM
+ *   Large (201–500)→ Talent Acquisition → HR Manager → HR Director
  *
- * Each group searches Apollo with include_similar_titles=true, which means
- * Apollo automatically includes close variants (e.g. "People Lead" for "HR Manager").
- *
- * Apollo seniority values (verified from docs):
+ * Apollo person_seniorities valid values (from official docs):
  *   owner | founder | c_suite | partner | vp | head | director | manager | senior | entry | intern
  */
 
@@ -28,10 +25,10 @@ export interface ContactRoleRecommendation {
   reason: string
 }
 
-// ─── Title groups by size ──────────────────────────────────────────────────────
+// ─── Title groups by company size ──────────────────────────────────────────────
 
 export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[] {
-  // Micro (1–10): owner makes all decisions including hiring
+  // Micro (1–10): owner makes all decisions — no HR team
   if (employeeCount !== null && employeeCount <= 10) {
     return [
       {
@@ -39,7 +36,7 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
         titles: [
           'owner', 'co-owner', 'business owner', 'founder', 'co-founder',
           'managing director', 'principal', 'director', 'chief executive officer',
-          'ceo', 'president', 'managing partner',
+          'ceo', 'president', 'managing partner', 'proprietor',
         ],
         seniorities: ['owner', 'founder', 'c_suite', 'partner', 'director'],
       },
@@ -51,7 +48,7 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
     ]
   }
 
-  // Small (11–50): should have HR manager or office manager
+  // Small (11–50): likely has HR manager or office manager for hiring
   if (employeeCount !== null && employeeCount <= 50) {
     return [
       {
@@ -60,7 +57,8 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
           'hr manager', 'human resources manager', 'people manager',
           'people and culture manager', 'p&c manager', 'hr generalist',
           'people operations manager', 'hr coordinator', 'talent manager',
-          'recruitment manager', 'recruiter', 'talent acquisition', 'office manager',
+          'recruitment manager', 'recruiter', 'talent acquisition',
+          'office manager', 'people lead',
         ],
         seniorities: ['manager', 'senior', 'director', 'head'],
       },
@@ -90,7 +88,7 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
           'p&c manager', 'talent acquisition manager', 'recruitment manager',
           'head of hr', 'head of people', 'head of talent', 'people operations manager',
           'hr business partner', 'talent acquisition lead', 'talent acquisition specialist',
-          'recruiter', 'people lead',
+          'recruiter', 'people lead', 'people partner',
         ],
         seniorities: ['manager', 'head', 'director', 'senior'],
       },
@@ -111,14 +109,15 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
     ]
   }
 
-  // Large (201–500): dedicated TA team + HR leadership
+  // Large (201–500): dedicated TA team + HR business partners
   return [
     {
       label: 'Talent Acquisition / Recruitment',
       titles: [
         'talent acquisition manager', 'talent acquisition lead', 'recruitment manager',
         'senior recruiter', 'recruiter', 'talent acquisition partner',
-        'senior talent acquisition specialist', 'head of talent acquisition', 'head of recruitment',
+        'senior talent acquisition specialist', 'head of talent acquisition',
+        'head of recruitment', 'talent acquisition specialist',
       ],
       seniorities: ['manager', 'head', 'senior', 'director'],
     },
@@ -126,7 +125,8 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
       label: 'HR Manager / P&C',
       titles: [
         'hr manager', 'human resources manager', 'people and culture manager',
-        'hr business partner', 'senior hr business partner', 'people operations manager', 'hr generalist',
+        'hr business partner', 'senior hr business partner',
+        'people operations manager', 'hr generalist', 'people partner',
       ],
       seniorities: ['manager', 'senior', 'head'],
     },
@@ -148,7 +148,7 @@ export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[]
   ]
 }
 
-// ─── Single role recommendation (for enrichment table display) ─────────────────
+// ─── Single role recommendation for enrichment table ──────────────────────────
 
 export function getRecommendedContactRole(
   employeeCount: string | null | undefined,
@@ -156,22 +156,18 @@ export function getRecommendedContactRole(
   reportingTo: string | null | undefined,
 ): ContactRoleRecommendation {
   if (existingContactName) {
-    return {
-      role: reportingTo ?? 'Contact found',
-      reason: 'Contact name already exists for this lead',
-    }
+    return { role: reportingTo ?? 'Contact found', reason: 'Contact already exists for this lead' }
   }
 
-  const count = parseEmployeeCountStr(employeeCount)
-
+  const count = parseEmpCountStr(employeeCount)
   if (count === null) return { role: 'HR Manager / Owner', reason: 'Unknown size — starting with HR then Owner' }
-  if (count <= 10)    return { role: 'Owner / MD', reason: `Micro business (${count} emp) — owner makes all decisions` }
+  if (count <= 10)    return { role: 'Owner / MD', reason: `Micro business (${count} emp) — owner decides all hiring` }
   if (count <= 50)    return { role: 'HR Manager / Office Manager', reason: `Small company (${count} emp)` }
-  if (count <= 200)   return { role: 'HR / People & Culture Manager', reason: `Mid-size (${count} emp) — dedicated P&C team` }
+  if (count <= 200)   return { role: 'HR / People & Culture Manager', reason: `Mid-size (${count} emp) — dedicated P&C team expected` }
   return { role: 'Talent Acquisition / HR Manager', reason: `Larger company (${count} emp) — dedicated TA team` }
 }
 
-function parseEmployeeCountStr(str: string | null | undefined): number | null {
+function parseEmpCountStr(str: string | null | undefined): number | null {
   if (!str) return null
   const range = str.match(/(\d[\d,]*)\s*[-–]\s*(\d[\d,]*)/)
   if (range) return parseInt(range[2].replace(/,/g, ''))
@@ -181,7 +177,7 @@ function parseEmployeeCountStr(str: string | null | undefined): number | null {
   return plain ? parseInt(plain) : null
 }
 
-// ─── LinkedIn + Google search URLs (for manual research in table) ───────────────
+// ─── LinkedIn + Google search URLs (for manual research buttons in table) ──────
 
 export function getLinkedInPeopleSearchUrl(companyName: string, role: string): string {
   const keyword = role.split('/')[0].trim()

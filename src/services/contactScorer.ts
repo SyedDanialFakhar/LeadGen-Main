@@ -1,19 +1,19 @@
 /**
  * CONTACT SCORER
- * ─────────────────────────────────────────────────────────────────────────────
- * Scores Apollo search candidates (FREE data) before spending any credits.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Scores Apollo search candidates using FREE metadata BEFORE spending credits.
  *
- * Uses the `has_email`, `has_direct_phone`, and `last_refreshed_at` fields
- * that Apollo returns for FREE in search results. This alone prevents wasting
- * 40-60% of credits on people who have no contactable data in Apollo's DB.
+ * Apollo returns `has_email` and `has_direct_phone` on every search result
+ * for FREE. This scorer uses those + title relevance + company match to
+ * rank candidates so we only enrich the best one.
  *
- * SCORING BREAKDOWN (0–100 points):
- *   has_email               +40   (most important — will enrichment get an email?)
- *   has_direct_phone="Yes"  +20   (bonus for direct dial)
- *   has_direct_phone="Maybe" +10
- *   title relevance         +20   (HR > GM > Owner for recruitment use case)
- *   company match           +15   (person's org name matches our lead)
- *   data freshness          +5    (refreshed in last 6 months)
+ * SCORING (0–100 points):
+ *   has_email = true          +40   Apollo has an email — enrichment likely to succeed
+ *   has_direct_phone = "Yes"  +15   Direct dial available
+ *   has_direct_phone = "Maybe"+7
+ *   Title relevance           0–22  HR > TA > GM > Owner hierarchy
+ *   Company name match        0–15  Ensures we got the right company
+ *   Data freshness            0–8   Refreshed recently = more reliable
  */
 
 import type { ApolloPersonSearchResult } from './apolloApi'
@@ -21,7 +21,7 @@ import type { ApolloPersonSearchResult } from './apolloApi'
 export interface ScoredCandidate {
   person: ApolloPersonSearchResult
   score: number
-  scoreBreakdown: {
+  breakdown: {
     hasEmail: number
     hasPhone: number
     titleRelevance: number
@@ -30,50 +30,55 @@ export interface ScoredCandidate {
   }
 }
 
-// Title relevance for recruitment agency use case
-// HR roles are most likely to be responsible for hiring decisions
-const TITLE_SCORES: { pattern: RegExp; score: number }[] = [
-  { pattern: /head of (hr|human resources|people|talent|recruitment)/i, score: 20 },
-  { pattern: /director.*(hr|human resources|people|talent)/i, score: 20 },
-  { pattern: /chief people|chro|chief hr/i, score: 20 },
-  { pattern: /vp.*(hr|human resources|people|talent)/i, score: 20 },
-  { pattern: /hr manager|human resources manager/i, score: 18 },
-  { pattern: /people (and culture|&culture|&c) manager/i, score: 18 },
-  { pattern: /talent acquisition manager|recruitment manager/i, score: 18 },
-  { pattern: /people operations manager/i, score: 16 },
-  { pattern: /talent acquisition|recruiter|recruitment/i, score: 15 },
-  { pattern: /hr (generalist|business partner|coordinator)/i, score: 14 },
-  { pattern: /people (partner|lead|specialist)/i, score: 14 },
-  { pattern: /office manager/i, score: 12 },
-  { pattern: /general manager/i, score: 11 },
-  { pattern: /operations (manager|director)/i, score: 10 },
-  { pattern: /managing director/i, score: 10 },
-  { pattern: /owner|founder|co-founder/i, score: 9 },
-  { pattern: /ceo|chief executive/i, score: 8 },
-  { pattern: /director/i, score: 7 },
-  { pattern: /manager/i, score: 5 },
+// Title relevance for recruitment agency targeting (hiring decision makers)
+const TITLE_SCORE_MAP: Array<{ pattern: RegExp; score: number }> = [
+  // Highest — dedicated HR leadership
+  { pattern: /head of (hr|human resources|people|talent|recruitment)/i,     score: 22 },
+  { pattern: /director.*(hr|human resources|people|talent)/i,               score: 22 },
+  { pattern: /chief people|chro|chief hr/i,                                 score: 22 },
+  { pattern: /vp.*(hr|human resources|people|talent)/i,                     score: 22 },
+  // High — HR managers (most common target)
+  { pattern: /hr manager|human resources manager/i,                         score: 20 },
+  { pattern: /people (and culture|&\s*culture|&c) manager/i,                score: 20 },
+  { pattern: /talent acquisition manager|recruitment manager/i,             score: 20 },
+  { pattern: /people operations manager/i,                                  score: 18 },
+  // Good — specific TA/HR roles
+  { pattern: /talent acquisition|senior recruiter|recruitment lead/i,       score: 16 },
+  { pattern: /hr (generalist|business partner|coordinator)/i,               score: 15 },
+  { pattern: /people (partner|lead|specialist)/i,                           score: 15 },
+  { pattern: /recruiter/i,                                                   score: 14 },
+  // Acceptable — office/operations
+  { pattern: /office manager/i,                                              score: 12 },
+  { pattern: /general manager/i,                                             score: 11 },
+  { pattern: /operations (manager|director)/i,                              score: 10 },
+  { pattern: /managing director/i,                                           score: 10 },
+  // Fallback — founders/owners (small companies)
+  { pattern: /owner|founder|co-founder|proprietor/i,                        score: 9  },
+  { pattern: /ceo|chief executive/i,                                        score: 8  },
+  // Generic
+  { pattern: /director/i,                                                    score: 7  },
+  { pattern: /manager/i,                                                     score: 5  },
 ]
 
 function scoreTitleRelevance(title: string): number {
-  for (const { pattern, score } of TITLE_SCORES) {
+  for (const { pattern, score } of TITLE_SCORE_MAP) {
     if (pattern.test(title)) return score
   }
   return 0
 }
 
-function scoreCompanyMatch(orgName: string | null, companyName: string): number {
+function scoreCompanyMatch(orgName: string | null, targetName: string): number {
   if (!orgName) return 0
-  const orgLc = orgName.toLowerCase()
-  const compLc = companyName.toLowerCase()
+  const org = orgName.toLowerCase()
+  const target = targetName.toLowerCase()
 
-  if (orgLc === compLc) return 15
-  if (orgLc.includes(compLc) || compLc.includes(orgLc)) return 12
+  if (org === target) return 15
+  if (org.includes(target) || target.includes(org)) return 12
 
-  // Word overlap check
-  const compWords = compLc.split(/\s+/).filter(w => w.length > 3)
-  const matchCount = compWords.filter(w => orgLc.includes(w)).length
-  if (matchCount >= 2) return 10
-  if (matchCount === 1) return 5
+  const targetWords = target.split(/\s+/).filter(w => w.length > 3)
+  const matches = targetWords.filter(w => org.includes(w)).length
+  if (matches >= 2) return 10
+  if (matches === 1) return 5
 
   return 0
 }
@@ -81,12 +86,11 @@ function scoreCompanyMatch(orgName: string | null, companyName: string): number 
 function scoreFreshness(lastRefreshedAt: string | null): number {
   if (!lastRefreshedAt) return 0
   try {
-    const refreshed = new Date(lastRefreshedAt)
-    const now = new Date()
-    const monthsAgo = (now.getTime() - refreshed.getTime()) / (1000 * 60 * 60 * 24 * 30)
-    if (monthsAgo <= 3) return 5
-    if (monthsAgo <= 6) return 3
-    if (monthsAgo <= 12) return 1
+    const monthsOld =
+      (Date.now() - new Date(lastRefreshedAt).getTime()) / (1000 * 60 * 60 * 24 * 30)
+    if (monthsOld <= 2)  return 8
+    if (monthsOld <= 6)  return 5
+    if (monthsOld <= 12) return 2
     return 0
   } catch {
     return 0
@@ -100,37 +104,40 @@ export function scoreCandidates(
   return people
     .map(person => {
       const hasEmail      = person.hasEmail ? 40 : 0
-      const hasPhone      = person.hasDirectPhone === 'Yes' ? 20 : person.hasDirectPhone === 'Maybe' ? 10 : 0
+      const hasPhone      = person.hasDirectPhone === 'Yes' ? 15 : person.hasDirectPhone === 'Maybe' ? 7 : 0
       const titleRelevance = scoreTitleRelevance(person.title)
       const companyMatch  = scoreCompanyMatch(person.orgName, companyName)
       const freshness     = scoreFreshness(person.lastRefreshedAt)
 
-      const score = hasEmail + hasPhone + titleRelevance + companyMatch + freshness
-
       return {
         person,
-        score,
-        scoreBreakdown: { hasEmail, hasPhone, titleRelevance, companyMatch, freshness },
+        score: hasEmail + hasPhone + titleRelevance + companyMatch + freshness,
+        breakdown: { hasEmail, hasPhone, titleRelevance, companyMatch, freshness },
       }
     })
     .sort((a, b) => b.score - a.score)
 }
 
 /**
- * Returns the best candidate, or null if none are worth enriching.
- * Threshold: at least 40 points (meaning Apollo has an email for them).
- * Below this threshold, enriching wastes a credit with high probability of no result.
+ * Returns the best candidate worth enriching.
+ * minScore=20 means: "at least has a relevant title and company match"
+ * If best candidate has has_email=false AND title score is low, skip enriching.
  */
 export function pickBestCandidate(
   candidates: ScoredCandidate[],
-  minScore = 20,
+  minScore = 15,
 ): ScoredCandidate | null {
   if (!candidates.length) return null
+
   const best = candidates[0]
   if (best.score < minScore) {
-    console.log(`[Scorer] Best candidate score ${best.score} < min ${minScore} — skipping enrichment`)
+    console.log(`[Scorer] Best score ${best.score} < min ${minScore} — skipping enrichment to save credits`)
     return null
   }
-  console.log(`[Scorer] Best: "${best.person.title}" score=${best.score}`, best.scoreBreakdown)
+
+  console.log(
+    `[Scorer] Selected: "${best.person.firstName} ${best.person.lastName}" — "${best.person.title}" | score=${best.score}`,
+    best.breakdown,
+  )
   return best
 }

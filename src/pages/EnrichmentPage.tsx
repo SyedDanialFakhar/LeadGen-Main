@@ -1,6 +1,6 @@
 // src/pages/EnrichmentPage.tsx
 import { useState } from 'react'
-import { Sparkles, UserCheck, X, Zap, Info } from 'lucide-react'
+import { Sparkles, UserCheck, X, Zap, Info, Phone } from 'lucide-react'
 import { TopNav } from '@/components/layout/TopNav'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EnrichmentTable } from '@/components/enrichment/EnrichmentTable'
@@ -26,7 +26,7 @@ export function EnrichmentPage() {
 
   const { updateLead } = useLeads()
 
-  const [selectedIds, setSelectedIds]       = useState<string[]>([])
+  const [selectedIds, setSelectedIds]             = useState<string[]>([])
   const [contactFinderOpen, setContactFinderOpen] = useState(false)
 
   const selectedLeads = pendingLeads.filter(l => selectedIds.includes(l.id))
@@ -41,18 +41,20 @@ export function EnrichmentPage() {
       if (d.contactTitle)       updates.contactJobTitle    = d.contactTitle
       if (d.contactLinkedinUrl) updates.contactLinkedinUrl = d.contactLinkedinUrl
       if (d.contactEmail)       updates.contactEmail       = d.contactEmail
-      if (d.contactPhone)       updates.contactPhone       = d.contactPhone  // ← NEW
+      // HQ phone from org enrichment — stored as company phone or contact phone
+      if (d.companyPhone)       updates.contactPhone       = d.companyPhone
       if (d.companyLinkedinUrl) updates.companyLinkedinUrl = d.companyLinkedinUrl
       if (d.companyWebsite)     updates.companyWebsite     = d.companyWebsite
       if (d.industry)           updates.companyIndustry    = d.industry
       if (d.employeeCount != null)
         updates.companyEmployeeCount = String(d.employeeCount)
 
-      // Mark enriched only when we found an email
+      // Only mark enriched when we found an email
       if (d.contactEmail) updates.enrichmentStatus = 'enriched'
 
-      if (Object.keys(updates).length > 0)
+      if (Object.keys(updates).length > 0) {
         updateLead({ id: d.leadId, updates })
+      }
     }
 
     setContactFinderOpen(false)
@@ -92,7 +94,7 @@ export function EnrichmentPage() {
       <div className="flex-1 p-6 flex flex-col gap-5">
         <PageHeader
           title="Contact Enrichment"
-          description="Find emails, phone numbers, and LinkedIn profiles using Apollo.io and Hunter.io"
+          description="Find the right hiring decision maker at each company — email, LinkedIn, and company phone via Apollo.io"
         />
 
         {/* Selection action bar */}
@@ -119,12 +121,12 @@ export function EnrichmentPage() {
             </Button>
 
             <p className="text-xs text-indigo-500 dark:text-indigo-400 hidden sm:block">
-              Apollo auto-finds the right person + email + phone at each company
+              Finds HR/Owner → gets email + company phone automatically
             </p>
 
             <button
               onClick={() => setSelectedIds([])}
-              className="ml-auto flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+              className="ml-auto flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300"
             >
               <X className="w-3.5 h-3.5" />
               Clear
@@ -134,7 +136,6 @@ export function EnrichmentPage() {
 
         {/* Credit cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Hunter */}
           <Card className="shadow-sm">
             <CardBody>
               <div className="flex items-center gap-2 mb-3">
@@ -147,22 +148,15 @@ export function EnrichmentPage() {
                 value={hunterCredits.used}
                 max={hunterCredits.total}
                 label={`${hunterCredits.used} of ${hunterCredits.total} searches used this month`}
-                color={
-                  hunterCredits.used >= hunterCredits.total ? 'red'
-                    : hunterCredits.used > hunterCredits.total * 0.8 ? 'yellow'
-                    : 'blue'
-                }
+                color={hunterCredits.used >= hunterCredits.total ? 'red' : hunterCredits.used > hunterCredits.total * 0.8 ? 'yellow' : 'blue'}
               />
               {hunterCredits.used >= hunterCredits.total && (
                 <p className="text-xs text-red-500 mt-1.5">⚠️ Monthly limit reached. Resets next month.</p>
               )}
-              <p className="text-xs text-slate-400 mt-1.5">
-                Fallback when Apollo doesn't return an email
-              </p>
+              <p className="text-xs text-slate-400 mt-1.5">Email fallback when Apollo has no match</p>
             </CardBody>
           </Card>
 
-          {/* Apollo */}
           <Card className="shadow-sm">
             <CardBody>
               <div className="flex items-center gap-2 mb-3">
@@ -174,28 +168,27 @@ export function EnrichmentPage() {
               <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
                 <div className="flex items-start gap-2">
                   <span className="text-emerald-500 font-bold shrink-0">FREE</span>
-                  <span>People search — finds right person + scores by email availability</span>
+                  <span>People search — finds person + pre-scores by email availability</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-amber-500 font-bold shrink-0">1 credit</span>
-                  <span>Org enrichment — real LinkedIn employee count + domain</span>
+                  <span>Org enrichment — LinkedIn employee count + HQ phone + domain</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-amber-500 font-bold shrink-0">1 credit</span>
-                  <span>Email + direct dial reveal (only for pre-scored candidates)</span>
+                  <span>Email reveal (only for pre-scored candidates with has_email=true)</span>
                 </div>
               </div>
               <div className="flex items-start gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
                 <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-slate-400">
-                  Smart scoring skips enrichment for contacts with no email in Apollo DB — saves credits.
+                  HQ phone comes free from org enrichment. Personal mobiles require async webhook — not supported.
                 </p>
               </div>
             </CardBody>
           </Card>
         </div>
 
-        {/* Enrichment table */}
         <EnrichmentTable
           leads={pendingLeads}
           isLoading={isLoading}
@@ -208,7 +201,6 @@ export function EnrichmentPage() {
         />
       </div>
 
-      {/* Contact Finder Modal */}
       <ContactFinderModal
         isOpen={contactFinderOpen}
         leads={selectedLeads}

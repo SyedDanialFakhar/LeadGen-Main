@@ -43,6 +43,8 @@ function makeInitialResult(lead: Lead): ContactFinderResult {
     emailSource:        null,
     creditsUsed:        0,
     creditsSaved:       0,
+    companyPhone:       null,        // Added missing property
+    candidateScore:     0,           // Added missing property
   }
 }
 
