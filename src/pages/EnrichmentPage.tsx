@@ -26,7 +26,7 @@ export function EnrichmentPage() {
 
   const { updateLead } = useLeads()
 
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds]       = useState<string[]>([])
   const [contactFinderOpen, setContactFinderOpen] = useState(false)
 
   const selectedLeads = pendingLeads.filter(l => selectedIds.includes(l.id))
@@ -41,6 +41,7 @@ export function EnrichmentPage() {
       if (d.contactTitle)       updates.contactJobTitle    = d.contactTitle
       if (d.contactLinkedinUrl) updates.contactLinkedinUrl = d.contactLinkedinUrl
       if (d.contactEmail)       updates.contactEmail       = d.contactEmail
+      if (d.contactPhone)       updates.contactPhone       = d.contactPhone  // ← NEW
       if (d.companyLinkedinUrl) updates.companyLinkedinUrl = d.companyLinkedinUrl
       if (d.companyWebsite)     updates.companyWebsite     = d.companyWebsite
       if (d.industry)           updates.companyIndustry    = d.industry
@@ -91,10 +92,10 @@ export function EnrichmentPage() {
       <div className="flex-1 p-6 flex flex-col gap-5">
         <PageHeader
           title="Contact Enrichment"
-          description="Find emails and LinkedIn profiles for your leads using Apollo.io and Hunter.io"
+          description="Find emails, phone numbers, and LinkedIn profiles using Apollo.io and Hunter.io"
         />
 
-        {/* ── Selection action bar ── */}
+        {/* Selection action bar */}
         {selectedIds.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm">
             <div className="flex items-center gap-2">
@@ -118,7 +119,7 @@ export function EnrichmentPage() {
             </Button>
 
             <p className="text-xs text-indigo-500 dark:text-indigo-400 hidden sm:block">
-              Apollo looks up the right person + email at each company automatically
+              Apollo auto-finds the right person + email + phone at each company
             </p>
 
             <button
@@ -131,7 +132,7 @@ export function EnrichmentPage() {
           </div>
         )}
 
-        {/* ── Credit cards ── */}
+        {/* Credit cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Hunter */}
           <Card className="shadow-sm">
@@ -140,29 +141,23 @@ export function EnrichmentPage() {
                 <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900/30">
                   <Sparkles className="w-4 h-4 text-orange-500" />
                 </div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Hunter.io Credits
-                </p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Hunter.io Credits</p>
               </div>
               <ProgressBar
                 value={hunterCredits.used}
                 max={hunterCredits.total}
                 label={`${hunterCredits.used} of ${hunterCredits.total} searches used this month`}
                 color={
-                  hunterCredits.used >= hunterCredits.total
-                    ? 'red'
-                    : hunterCredits.used > hunterCredits.total * 0.8
-                    ? 'yellow'
+                  hunterCredits.used >= hunterCredits.total ? 'red'
+                    : hunterCredits.used > hunterCredits.total * 0.8 ? 'yellow'
                     : 'blue'
                 }
               />
               {hunterCredits.used >= hunterCredits.total && (
-                <p className="text-xs text-red-500 mt-1.5">
-                  ⚠️ Monthly limit reached. Resets next month.
-                </p>
+                <p className="text-xs text-red-500 mt-1.5">⚠️ Monthly limit reached. Resets next month.</p>
               )}
               <p className="text-xs text-slate-400 mt-1.5">
-                Used as fallback when Apollo doesn't return an email
+                Fallback when Apollo doesn't return an email
               </p>
             </CardBody>
           </Card>
@@ -174,35 +169,33 @@ export function EnrichmentPage() {
                 <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
                   <Zap className="w-4 h-4 text-indigo-500" />
                 </div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Apollo.io Credits
-                </p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Apollo.io Credits</p>
               </div>
               <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
                 <div className="flex items-start gap-2">
                   <span className="text-emerald-500 font-bold shrink-0">FREE</span>
-                  <span>People search — finding the right person at a company</span>
+                  <span>People search — finds right person + scores by email availability</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-amber-500 font-bold shrink-0">1 credit</span>
-                  <span>Per email reveal (Apollo People Enrichment)</span>
+                  <span>Org enrichment — real LinkedIn employee count + domain</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-amber-500 font-bold shrink-0">1 credit</span>
-                  <span>Per company enrichment (gets real LinkedIn employee count)</span>
+                  <span>Email + direct dial reveal (only for pre-scored candidates)</span>
                 </div>
               </div>
               <div className="flex items-start gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
                 <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-slate-400">
-                  Free tier: ~10 export credits/month. Employee counts from Apollo come from LinkedIn data — more accurate than Seek.
+                  Smart scoring skips enrichment for contacts with no email in Apollo DB — saves credits.
                 </p>
               </div>
             </CardBody>
           </Card>
         </div>
 
-        {/* ── Enrichment table ── */}
+        {/* Enrichment table */}
         <EnrichmentTable
           leads={pendingLeads}
           isLoading={isLoading}
@@ -215,7 +208,7 @@ export function EnrichmentPage() {
         />
       </div>
 
-      {/* ── Contact Finder Modal ── */}
+      {/* Contact Finder Modal */}
       <ContactFinderModal
         isOpen={contactFinderOpen}
         leads={selectedLeads}

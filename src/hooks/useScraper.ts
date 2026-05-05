@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import { runSeekScraper, waitForRun, fetchRunResults } from '@/services/apify'
 import {
-  extractEmails,     // ← single source of truth for email filtering
+  extractEmails,
   extractPhones,
   extractContactName,
   runAllFilters,
@@ -41,6 +41,15 @@ function sanitizeNumber(value: number | string | null | undefined): number | nul
   if (value === 'N/A' || value === 'n/a') return null
   const n = typeof value === 'string' ? parseFloat(value) : value
   return isNaN(n) ? null : n
+}
+
+// ─── Days between helper ──────────────────────────────────────────────────────
+function getDaysBetween(date: Date, referenceDate: Date = new Date()): number {
+  const d1 = new Date(date)
+  d1.setHours(0, 0, 0, 0)
+  const d2 = new Date(referenceDate)
+  d2.setHours(0, 0, 0, 0)
+  return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 // ─── Validate extracted contact name ──────────────────────────────────────────
@@ -97,6 +106,7 @@ export function useScraper() {
     skipPages: number
     minAgeDays: number
     salesOnly: boolean
+    filterOlderThan7Days: boolean
   } | null>(null)
 
   const addLog = useCallback((message: string) => {
@@ -108,7 +118,6 @@ export function useScraper() {
   }, [])
 
   // ─── Core job processing ──────────────────────────────────────────────────
-
   const processJobs = (
     rawResults: RawSeekJob[],
     _minAgeDays: number = 0,
@@ -118,9 +127,7 @@ export function useScraper() {
     const filteredRecords: FilteredJobRecord[] = []
 
     const counts: Record<string, number> = {}
-    const inc = (cat: string) => {
-      counts[cat] = (counts[cat] || 0) + 1
-    }
+    const inc = (cat: string) => { counts[cat] = (counts[cat] || 0) + 1 }
 
     for (const job of rawResults) {
       const companyName = job.advertiser?.name || job.companyName || 'Unknown Company'
@@ -131,7 +138,6 @@ export function useScraper() {
       const description = job.content?.unEditedContent || job.content?.jobHook || ''
       const jobLink = job.jobLink || job.url || `https://www.seek.com.au/job/${job.id}`
 
-      // Sanitize all Apify "N/A" values
       const companyWebsite = sanitize(job.companyProfile?.website || job.companyWebsite || null)
       const companyIndustry = sanitize(job.companyProfile?.industry || null)
       const companySize = sanitize(job.companyProfile?.size || null)
@@ -141,7 +147,6 @@ export function useScraper() {
       const isVerified = job.advertiser?.isVerified || job.isVerified || false
       const companyLogo = sanitize(job.advertiser?.logo || null)
 
-      // ── FILTER ────────────────────────────────────────────────────────────
       const { shouldFilter, verdict } = runAllFilters({
         companyName,
         advertiserName,
@@ -150,13 +155,12 @@ export function useScraper() {
         website: companyWebsite,
         classification,
         isPrivate: job.advertiser?.isPrivate,
-        filterSalesOnly: false, // Sales already filtered at Seek URL level
+        filterSalesOnly: false,
         recruiterProfile: job.recruiterProfile ?? null,
         recruiterSpecialisations: job.recruiterSpecialisations ?? null,
       })
 
       if (shouldFilter) {
-        console.log(`  ❌ [${verdict.category}] ${companyName}: ${verdict.reason}`)
         inc(verdict.category)
         filteredRecords.push({
           companyName,
@@ -182,9 +186,6 @@ export function useScraper() {
         continue
       }
 
-      // ── PASSED ────────────────────────────────────────────────────────────
-      console.log(`  ✅ PASSED: ${companyName}`)
-
       const jobLocationInfo = job.joblocationInfo
       const fullLocation = jobLocationInfo?.displayLocation || job.location || 'Location not specified'
       const stateMatch = fullLocation.match(/\b(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\b/)
@@ -199,46 +200,19 @@ export function useScraper() {
         fullLocation.split(',')[0] ||
         ''
 
-      // ── Email extraction ──────────────────────────────────────────────────
-      //
-      // FIX: Previously useScraper.ts had its OWN copy of isPersonalEmail /
-      // GENERIC_EMAIL_PREFIXES that could get out of sync with contactExtractor.ts.
-      // Now BOTH paths (Apify-provided emails AND description-extracted emails)
-      // use extractEmails() from contactExtractor.ts — single source of truth.
-      //
-      // extractEmails() already:
-      //   1. Runs a regex to find all email addresses in text
-      //   2. Filters out every generic/role email (careers@, hr@, info@, apply@, etc.)
-      //   3. Only returns personal emails (name-based prefixes like john@, sarah.jones@)
-      //
-      // For Apify-provided emails: we pass them as a fake "text" string so they
-      // go through the same isPersonalEmail filter used for extracted emails.
-      // This eliminates any possibility of the two copies diverging.
-
       const apifyEmailsRaw = (job.emails || []).filter((e) => e && e !== 'N/A')
-      // Run Apify emails through extractEmails by joining them into a text blob.
-      // extractEmails will regex-match them back out and filter generics.
       const apifyEmailsFiltered =
-        apifyEmailsRaw.length > 0
-          ? extractEmails(apifyEmailsRaw.join(' '))
-          : []
-
-      // Emails extracted from the job description text
+        apifyEmailsRaw.length > 0 ? extractEmails(apifyEmailsRaw.join(' ')) : []
       const descEmails = extractEmails(description)
-
-      // Merge and deduplicate — no generics in either list now
       const emails = [...new Set([...apifyEmailsFiltered, ...descEmails])]
 
-      // ── Phone extraction ──────────────────────────────────────────────────
       const apifyPhones = (job.phoneNumbers || []).filter((p) => p && p !== 'N/A')
       const descPhones = extractPhones(description)
       const phones = [...new Set([...apifyPhones, ...descPhones])]
 
-      // ── Contact name ──────────────────────────────────────────────────────
       const rawContactName = extractContactName(description)
       const contactName = isValidContactName(rawContactName)
 
-      // ── Date formatting ───────────────────────────────────────────────────
       let formattedDate = 'Recently posted'
       const datePostedRaw = job.listedAt || ''
       if (datePostedRaw) {
@@ -246,96 +220,55 @@ export function useScraper() {
           const date = new Date(datePostedRaw)
           if (!isNaN(date.getTime())) {
             formattedDate = date.toLocaleDateString('en-AU', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
+              day: '2-digit', month: '2-digit', year: 'numeric',
             })
           }
-        } catch {
-          // keep default
-        }
+        } catch { /* keep default */ }
       }
 
       const salary = sanitize(job.salary || null)
 
       let workType: string | null = null
-      if (Array.isArray(job.workTypes)) {
-        workType = sanitize(job.workTypes[0])
-      } else if (typeof job.workTypes === 'string') {
-        workType = sanitize(job.workTypes)
-      }
+      if (Array.isArray(job.workTypes)) workType = sanitize(job.workTypes[0])
+      else if (typeof job.workTypes === 'string') workType = sanitize(job.workTypes)
 
       let workArrangement: string | null = null
-      if (Array.isArray(job.workArrangements)) {
-        workArrangement = sanitize(job.workArrangements[0])
-      } else if (typeof job.workArrangements === 'string') {
-        workArrangement = sanitize(job.workArrangements)
-      }
+      if (Array.isArray(job.workArrangements)) workArrangement = sanitize(job.workArrangements[0])
+      else if (typeof job.workArrangements === 'string') workArrangement = sanitize(job.workArrangements)
 
       let numApplicants: string | null = null
-      if (job.numApplicants && job.numApplicants !== 'N/A') {
-        numApplicants = job.numApplicants
-      }
+      if (job.numApplicants && job.numApplicants !== 'N/A') numApplicants = job.numApplicants
 
       const applyLink = job.applyLink || jobLink
       const companySlug = sanitize(job.companyProfile?.companyNameSlug || null)
       const companyProfileLink = companySlug
-        ? `https://www.seek.com.au/companies/${companySlug}`
-        : null
+        ? `https://www.seek.com.au/companies/${companySlug}` : null
       const companyNumberOfReviews = sanitizeNumber(job.companyProfile?.numberOfReviews)
       const companyPerksAndBenefits = sanitize(job.companyProfile?.perksAndBenefits || null)
 
       jobsMap.set(jobLink, {
         id: job.id || `${Date.now()}`,
-        companyId,
-        companyName,
-        companyWebsite,
-        companyLogo,
-        companyIndustry,
-        companySize,
-        companyRating,
-        companyOverview,
-        companySlug,
-        companyProfileLink,
-        companyNumberOfReviews,
-        companyPerksAndBenefits,
+        companyId, companyName, companyWebsite, companyLogo, companyIndustry,
+        companySize, companyRating, companyOverview, companySlug, companyProfileLink,
+        companyNumberOfReviews, companyPerksAndBenefits,
         companyOpenJobs: sanitize(job.companyOpenJobs || null),
         companyTags: job.companyTags || [],
-        jobTitle,
-        jobLink,
-        applyLink,
-        salary,
-        datePosted: formattedDate,
-        datePostedRaw,
+        jobTitle, jobLink, applyLink, salary,
+        datePosted: formattedDate, datePostedRaw,
         expiresAt: job.expiresAtUtc || null,
-        city,
-        location: fullLocation,
-        state,
-        country,
-        workType,
-        workArrangement,
-        numApplicants,
-        classification,
-        subClassification,
-        emails,
-        phones,
-        contactName,
+        city, location: fullLocation, state, country,
+        workType, workArrangement, numApplicants,
+        classification, subClassification,
+        emails, phones, contactName,
         description: description.substring(0, 1000),
-        isVerified,
-        platform: 'seek',
+        isVerified, platform: 'seek',
       })
     }
-
-    console.log(`\n📊 Filter Results:`)
-    console.log(`  ✅ Passed: ${jobsMap.size}`)
-    Object.entries(counts).forEach(([cat, n]) => console.log(`  🚫 ${cat}: ${n}`))
 
     if (counts['recruiter_profile'])
       addLog(`👤 Filtered ${counts['recruiter_profile']} recruiter-posted jobs`)
     if (counts['recruitment_agency'] || counts['recruitment_website'])
-      addLog(
-        `🚫 Filtered ${(counts['recruitment_agency'] || 0) + (counts['recruitment_website'] || 0)} recruitment agencies`
-      )
+      addLog(`🚫 Filtered ${(counts['recruitment_agency'] || 0) + (counts['recruitment_website'] || 0)} recruitment agencies`)
     if (counts['no_agency_disclaimer'])
       addLog(`📝 Filtered ${counts['no_agency_disclaimer']} jobs with "no agencies" disclaimer`)
     if (counts['hr_consulting'])
@@ -349,7 +282,6 @@ export function useScraper() {
   }
 
   // ─── Search ───────────────────────────────────────────────────────────────
-
   const performSearch = useCallback(
     async (
       jobTitles: string[],
@@ -359,7 +291,8 @@ export function useScraper() {
       minAgeDays: number = 0,
       salesOnlyFilter: boolean = true,
       offset: number = 0,
-      isLoadMore: boolean = false
+      isLoadMore: boolean = false,
+      filterOlderThan7Days: boolean = false,
     ) => {
       const startedAt = Date.now()
 
@@ -371,24 +304,17 @@ export function useScraper() {
         setCurrentOffset(0)
         setHasMore(false)
         setScraperStep('building_query')
-        setMetrics({
-          totalRaw: 0,
-          validLeads: 0,
-          filteredOut: 0,
-          stepStartedAt: Date.now(),
-          elapsedSeconds: 0,
-        })
+        setMetrics({ totalRaw: 0, validLeads: 0, filteredOut: 0, stepStartedAt: Date.now(), elapsedSeconds: 0 })
       } else {
         setIsLoadingMore(true)
       }
 
       if (!isLoadMore) {
-        addLog(
-          `🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`
-        )
+        addLog(`🚀 Starting scrape for ${jobTitles.length} job title(s): "${jobTitles.join('", "')}"`)
         addLog(`📍 Location: ${city === 'Australia' ? 'All Australia' : city}`)
         addLog(`📊 Requesting up to ${maxResults} results per job title`)
         addLog(`🎯 Sales classification filter: Applied at Seek URL level`)
+        if (filterOlderThan7Days) addLog(`🕐 Age filter: Tracking jobs < 7 days old for history`)
         if (skipPages > 0) addLog(`⏩ Skip mode: offset=${skipPages * 20} jobs`)
         if (minAgeDays > 0) addLog(`📅 Date filter: last ${minAgeDays} days`)
       } else {
@@ -410,8 +336,8 @@ export function useScraper() {
             platform: 'seek',
             city: city as City,
             roleQuery: jobTitle,
-            minAgeDays: minAgeDays,
-            maxResults: maxResults,
+            minAgeDays,
+            maxResults,
             offset: skipPages,
             salesOnly: salesOnlyFilter,
           }
@@ -455,10 +381,40 @@ export function useScraper() {
         setScraperStep('filtering')
 
         const { passed: processedJobs, filteredRecords } = processJobs(
-          allRawJobs,
-          minAgeDays,
-          salesOnlyFilter
+          allRawJobs, minAgeDays, salesOnlyFilter
         )
+
+        // ─── Track age-filtered jobs in history ──────────────────────────
+        // If 7+ days filter is on, jobs that are too fresh get logged with
+        // reason "too_new" so they appear in scraper history.
+        let historyFilteredRecords: FilteredJobRecord[] = [...filteredRecords]
+        if (filterOlderThan7Days) {
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          let ageFilteredCount = 0
+          for (const job of processedJobs) {
+            if (!job.datePostedRaw) continue
+            const daysOld = getDaysBetween(new Date(job.datePostedRaw), today)
+            if (daysOld < 7) {
+              const ageLabel =
+                daysOld === 0 ? 'today'
+                : daysOld === 1 ? 'yesterday'
+                : `${daysOld} day${daysOld !== 1 ? 's' : ''} ago`
+              historyFilteredRecords.push({
+                companyName: job.companyName,
+                jobTitle: job.jobTitle,
+                reason: `Posted ${ageLabel} — hidden by "7+ days only" display filter`,
+                category: 'too_new',
+                confidence: 100,
+                jobLink: job.jobLink ?? undefined,
+              })
+              ageFilteredCount++
+            }
+          }
+          if (ageFilteredCount > 0) {
+            addLog(`🕐 ${ageFilteredCount} fresh job${ageFilteredCount !== 1 ? 's' : ''} hidden by 7+ days filter (logged to history)`)
+          }
+        }
 
         const elapsed = Math.round((Date.now() - startedAt) / 1000)
         updateMetrics({
@@ -473,12 +429,8 @@ export function useScraper() {
           setHasMore(processedJobs.length >= maxResults * jobTitles.length)
           setCurrentOffset(offset + maxResults)
           setLastSearchParams({
-            jobTitles,
-            city,
-            maxResults,
-            skipPages,
-            minAgeDays,
-            salesOnly: salesOnlyFilter,
+            jobTitles, city, maxResults, skipPages, minAgeDays,
+            salesOnly: salesOnlyFilter, filterOlderThan7Days,
           })
 
           if (historyId) {
@@ -486,15 +438,13 @@ export function useScraper() {
               status: 'completed',
               jobs_found: allRawJobs.length,
               jobs_passed: processedJobs.length,
-              jobs_filtered: allRawJobs.length - processedJobs.length,
+              jobs_filtered: historyFilteredRecords.length,
               completed_at: new Date().toISOString(),
-              filtered_jobs: filteredRecords,
+              filtered_jobs: historyFilteredRecords,
             })
           }
 
-          addLog(
-            `✨ Done in ${elapsed}s! ${processedJobs.length} valid leads from ${allRawJobs.length} jobs (${filteredRecords.length} filtered out)`
-          )
+          addLog(`✨ Done in ${elapsed}s! ${processedJobs.length} valid leads from ${allRawJobs.length} jobs (${filteredRecords.length} filtered out)`)
           setScraperStep('done')
         } else {
           const existingUrls = new Set(jobs.map((j) => j.jobLink))
@@ -502,9 +452,7 @@ export function useScraper() {
           setJobs((prev) => [...prev, ...newJobs])
           setHasMore(processedJobs.length >= maxResults * jobTitles.length)
           setCurrentOffset(offset + maxResults)
-          addLog(
-            `✨ Loaded ${newJobs.length} more (Total: ${jobs.length + newJobs.length})`
-          )
+          addLog(`✨ Loaded ${newJobs.length} more (Total: ${jobs.length + newJobs.length})`)
           setScraperStep('done')
         }
       } catch (err) {
@@ -520,9 +468,7 @@ export function useScraper() {
               error_message: message,
               completed_at: new Date().toISOString(),
             })
-          } catch {
-            // ignore history update failure
-          }
+          } catch { /* ignore */ }
         }
       } finally {
         if (!isLoadMore) setIsLoading(false)
@@ -539,17 +485,12 @@ export function useScraper() {
       maxResults: number,
       skipPages: number = 0,
       minAgeDays: number = 0,
-      salesOnlyFilter: boolean = true
+      salesOnlyFilter: boolean = true,
+      filterOlderThan7Days: boolean = false,
     ) => {
       await performSearch(
-        jobTitles,
-        city,
-        maxResults,
-        skipPages,
-        minAgeDays,
-        salesOnlyFilter,
-        0,
-        false
+        jobTitles, city, maxResults, skipPages, minAgeDays,
+        salesOnlyFilter, 0, false, filterOlderThan7Days,
       )
     },
     [performSearch]
@@ -565,7 +506,8 @@ export function useScraper() {
         lastSearchParams.minAgeDays,
         lastSearchParams.salesOnly,
         currentOffset,
-        true
+        true,
+        lastSearchParams.filterOlderThan7Days,
       )
     }
   }, [lastSearchParams, hasMore, isLoading, isLoadingMore, currentOffset, performSearch])
@@ -580,18 +522,10 @@ export function useScraper() {
     setCurrentOffset(0)
     setLastSearchParams(null)
     setScraperStep('idle')
-    setMetrics({
-      totalRaw: 0,
-      validLeads: 0,
-      filteredOut: 0,
-      stepStartedAt: null,
-      elapsedSeconds: 0,
-    })
+    setMetrics({ totalRaw: 0, validLeads: 0, filteredOut: 0, stepStartedAt: null, elapsedSeconds: 0 })
   }, [])
 
-  const toggleSalesOnly = useCallback((value: boolean) => {
-    setSalesOnly(value)
-  }, [])
+  const toggleSalesOnly = useCallback((value: boolean) => { setSalesOnly(value) }, [])
 
   return {
     isLoading,

@@ -1,320 +1,195 @@
-// src/utils/contactPicker.ts
 /**
- * CONTACT PICKER — Exact hierarchy from instructions image
+ * CONTACT PICKER UTILITIES
  * ─────────────────────────────────────────────────────────────────────────────
- * Priority list (exact from instructions):
- *   1. HR Manager / People & Culture / Human Resource Manager / Talent Acquisition
- *   2. General Manager
- *   3. Director
- *   4. Operations Manager
- *   5. Regional Manager
- *   6. Managing Director
- *   7. Sales Manager / Director of Sales / Head of Sales
- *   8. CEO
+ * Defines priority title groups for Apollo people search based on company size.
+ * Used in Phase 3 (finding_contact) of the contact finder pipeline.
  *
- * Size rules:
- *   ≤ 5 employees   → ALWAYS CEO (user rule: small enough owner does everything)
- *   < 100 employees → Follow hierarchy 1–8 (small company, no dedicated HR yet)
- *   ≥ 100 employees → HR Person FIRST, or Sales Manager/Executive
- *   > 500 employees → SKIP entirely
+ * LOGIC:
+ *   Tiny  (1-10)   → Owner / Founder / MD (they handle everything)
+ *   Small (11-50)  → HR Manager / Office Manager → GM / Director fallback
+ *   Mid   (51-200) → HR Manager / P&C Manager / Talent Acquisition → HR Director
+ *   Large (201-500)→ Talent Acquisition / HR Manager / HR Director
+ *
+ * Each group searches Apollo with include_similar_titles=true, which means
+ * Apollo automatically includes close variants (e.g. "People Lead" for "HR Manager").
+ *
+ * Apollo seniority values (verified from docs):
+ *   owner | founder | c_suite | partner | vp | head | director | manager | senior | entry | intern
  */
-
-// ─── Employee count parser ─────────────────────────────────────────────────────
-
-/**
- * Converts Seek/Apollo employee count string to MAX number in range.
- * "1-10" → 10, "51-200" → 200, "201-500" → 500, "500+" → 500
- * Returns 0 for unknown/null.
- */
-export function getMaxEmployeeCount(str: string | null | undefined): number {
-  if (!str) return 0
-  const s = str.trim()
-
-  // "51-200", "201-500", "1-10" etc.
-  const rangeMatch = s.match(/^(\d+)\s*[-–]\s*(\d+)/)
-  if (rangeMatch) return parseInt(rangeMatch[2])
-
-  // "500+", "1000+" etc.
-  const plusMatch = s.match(/^(\d+)\s*[+]/)
-  if (plusMatch) return parseInt(plusMatch[1])
-
-  // Plain number "250"
-  const plain = parseInt(s.replace(/[^0-9]/g, ''))
-  return isNaN(plain) ? 0 : plain
-}
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-export type RecommendedContactRole =
-  | 'CEO'
-  | 'Director'
-  | 'Founder / Owner'
-  | 'Managing Director'
-  | 'Operations Manager'
-  | 'Regional Manager'
-  | 'General Manager'
-  | 'HR Manager'
-  | 'People & Culture Manager'
-  | 'Talent Acquisition Manager'
-  | 'Sales Manager'
-  | 'Hiring Manager'
-
-export interface ContactRecommendation {
-  role: RecommendedContactRole
-  reason: string
-  priority: number
-  /** All Apollo search titles for this recommendation */
-  searchTitles: string[]
-}
-
-// ─── Title groups (used by Apollo people search) ───────────────────────────────
 
 export interface TitleGroup {
   label: string
   titles: string[]
-  seniorities: string[]
+  seniorities?: string[]
 }
 
-/**
- * Returns Apollo search title groups in priority order.
- * Based on LinkedIn-verified employee count (NOT Seek data).
- *
- * ≤ 5 employees:   CEO always
- * < 100 employees: Hierarchy 1–8 (no dedicated HR, owner/director recruits)
- * ≥ 100 employees: HR first, then Sales Manager, then rest of hierarchy
- * > 500 employees: Never called (filtered out before this)
- */
+export interface ContactRoleRecommendation {
+  role: string
+  reason: string
+}
+
+// ─── Title groups by size ──────────────────────────────────────────────────────
+
 export function getTitleGroupsBySize(employeeCount: number | null): TitleGroup[] {
-  const n = employeeCount ?? 0
-
-  // ── ≤ 5: CEO always (owner does everything at this size) ──
-  if (n > 0 && n <= 5) {
+  // Micro (1–10): owner makes all decisions including hiring
+  if (employeeCount !== null && employeeCount <= 10) {
     return [
       {
-        label: 'CEO / Owner',
+        label: 'Owner / Founder / MD',
         titles: [
-          'CEO', 'Chief Executive Officer', 'Founder', 'Co-Founder',
-          'Owner', 'Managing Director', 'Director', 'Principal',
+          'owner', 'co-owner', 'business owner', 'founder', 'co-founder',
+          'managing director', 'principal', 'director', 'chief executive officer',
+          'ceo', 'president', 'managing partner',
         ],
+        seniorities: ['owner', 'founder', 'c_suite', 'partner', 'director'],
+      },
+      {
+        label: 'General Manager (fallback)',
+        titles: ['general manager', 'operations manager', 'office manager', 'business manager'],
+        seniorities: ['manager', 'director'],
+      },
+    ]
+  }
+
+  // Small (11–50): should have HR manager or office manager
+  if (employeeCount !== null && employeeCount <= 50) {
+    return [
+      {
+        label: 'HR / People Manager',
+        titles: [
+          'hr manager', 'human resources manager', 'people manager',
+          'people and culture manager', 'p&c manager', 'hr generalist',
+          'people operations manager', 'hr coordinator', 'talent manager',
+          'recruitment manager', 'recruiter', 'talent acquisition', 'office manager',
+        ],
+        seniorities: ['manager', 'senior', 'director', 'head'],
+      },
+      {
+        label: 'General Manager / Director',
+        titles: [
+          'general manager', 'operations director', 'operations manager',
+          'business manager', 'director of operations', 'managing director',
+        ],
+        seniorities: ['manager', 'director', 'c_suite'],
+      },
+      {
+        label: 'Owner / Founder (fallback)',
+        titles: ['owner', 'founder', 'co-founder', 'ceo', 'principal', 'managing partner'],
         seniorities: ['owner', 'founder', 'c_suite'],
       },
     ]
   }
 
-  // ── Unknown size OR < 100: Follow hierarchy 1–8 ──
-  // (No dedicated HR dept yet at this size)
-  if (n === 0 || n < 100) {
+  // Medium (51–200): dedicated HR or People & Culture team
+  if (employeeCount !== null && employeeCount <= 200) {
     return [
       {
-        // Priority 1: HR (even small companies might have one)
-        label: '1 - HR / People & Culture',
+        label: 'HR / Talent / P&C Manager',
         titles: [
-          'HR Manager', 'Human Resources Manager',
-          'People and Culture Manager', 'People & Culture Manager',
-          'Talent Acquisition Manager', 'Head of People',
-          'HR Business Partner', 'Recruitment Manager',
-          'Human Resource Manager', 'Head of HR',
+          'hr manager', 'human resources manager', 'people and culture manager',
+          'p&c manager', 'talent acquisition manager', 'recruitment manager',
+          'head of hr', 'head of people', 'head of talent', 'people operations manager',
+          'hr business partner', 'talent acquisition lead', 'talent acquisition specialist',
+          'recruiter', 'people lead',
         ],
-        seniorities: ['head', 'manager'],
+        seniorities: ['manager', 'head', 'director', 'senior'],
       },
       {
-        // Priority 2: General Manager
-        label: '2 - General Manager',
-        titles: ['General Manager', 'Country Manager', 'Business Manager'],
-        seniorities: ['director', 'manager'],
-      },
-      {
-        // Priority 3: Director
-        label: '3 - Director',
-        titles: ['Director', 'Executive Director'],
-        seniorities: ['director'],
-      },
-      {
-        // Priority 4: Operations Manager
-        label: '4 - Operations Manager',
+        label: 'HR Director / VP People',
         titles: [
-          'Operations Manager', 'Operations Director',
-          'Chief Operating Officer', 'COO',
+          'hr director', 'director of human resources', 'director of people',
+          'vp of hr', 'vp of people', 'vice president of human resources',
+          'chief people officer', 'chief hr officer', 'chro',
         ],
-        seniorities: ['director', 'manager'],
+        seniorities: ['director', 'vp', 'c_suite'],
       },
       {
-        // Priority 5: Regional Manager
-        label: '5 - Regional Manager',
-        titles: ['Regional Manager', 'Area Manager', 'State Manager'],
-        seniorities: ['manager'],
-      },
-      {
-        // Priority 6: Managing Director
-        label: '6 - Managing Director',
-        titles: ['Managing Director', 'MD'],
-        seniorities: ['c_suite', 'director'],
-      },
-      {
-        // Priority 7: Sales
-        label: '7 - Sales Manager / Head of Sales',
-        titles: [
-          'Sales Manager', 'Director of Sales', 'Head of Sales',
-          'Sales Director', 'VP Sales', 'Sales Executive',
-        ],
-        seniorities: ['director', 'manager'],
-      },
-      {
-        // Priority 8: CEO (last resort)
-        label: '8 - CEO',
-        titles: [
-          'CEO', 'Chief Executive Officer', 'Founder',
-          'Co-Founder', 'Owner', 'Principal',
-        ],
-        seniorities: ['owner', 'founder', 'c_suite'],
+        label: 'GM / Regional (fallback)',
+        titles: ['general manager', 'regional manager', 'operations manager', 'state manager', 'branch manager'],
+        seniorities: ['manager', 'director'],
       },
     ]
   }
 
-  // ── ≥ 100: HR person FIRST, or Sales Manager/Executive ──
-  // (Dedicated HR team exists at this size)
+  // Large (201–500): dedicated TA team + HR leadership
   return [
     {
-      // HR is PRIMARY at this size
-      label: '1 - HR / People & Culture / Talent',
+      label: 'Talent Acquisition / Recruitment',
       titles: [
-        'HR Manager', 'Human Resources Manager',
-        'People and Culture Manager', 'People & Culture Manager',
-        'Talent Acquisition Manager', 'Talent Acquisition Lead',
-        'Head of People', 'Head of HR', 'Head of People and Culture',
-        'HR Director', 'HR Business Partner',
-        'Recruitment Manager', 'Talent Manager',
-        'Human Resource Manager', 'HR Generalist',
+        'talent acquisition manager', 'talent acquisition lead', 'recruitment manager',
+        'senior recruiter', 'recruiter', 'talent acquisition partner',
+        'senior talent acquisition specialist', 'head of talent acquisition', 'head of recruitment',
       ],
-      seniorities: ['head', 'director', 'manager'],
+      seniorities: ['manager', 'head', 'senior', 'director'],
     },
     {
-      // Sales Manager also relevant per instructions
-      label: '7 - Sales Manager / Head of Sales',
+      label: 'HR Manager / P&C',
       titles: [
-        'Sales Manager', 'Director of Sales', 'Head of Sales',
-        'Sales Director', 'VP of Sales', 'VP Sales',
-        'National Sales Manager', 'State Sales Manager',
+        'hr manager', 'human resources manager', 'people and culture manager',
+        'hr business partner', 'senior hr business partner', 'people operations manager', 'hr generalist',
       ],
-      seniorities: ['director', 'manager', 'vp'],
+      seniorities: ['manager', 'senior', 'head'],
     },
     {
-      label: '2 - General Manager',
-      titles: ['General Manager', 'Country Manager', 'Business Manager'],
+      label: 'HR Director / Head of People',
+      titles: [
+        'hr director', 'director of human resources', 'director of people',
+        'director of people and culture', 'head of hr', 'head of people',
+        'head of people and culture', 'vp of people', 'vp of hr',
+        'chief people officer', 'chro',
+      ],
+      seniorities: ['director', 'head', 'vp', 'c_suite'],
+    },
+    {
+      label: 'GM (last resort)',
+      titles: ['general manager', 'regional general manager', 'operations director'],
       seniorities: ['director', 'manager'],
-    },
-    {
-      label: '3 - Director',
-      titles: ['Director', 'Executive Director'],
-      seniorities: ['director'],
-    },
-    {
-      label: '4 - Operations Manager',
-      titles: ['Operations Manager', 'Operations Director', 'COO'],
-      seniorities: ['director', 'manager'],
-    },
-    {
-      label: '5 - Regional Manager',
-      titles: ['Regional Manager', 'Area Manager', 'State Manager'],
-      seniorities: ['manager'],
-    },
-    {
-      label: '6 - Managing Director',
-      titles: ['Managing Director'],
-      seniorities: ['c_suite', 'director'],
-    },
-    {
-      label: '8 - CEO (last resort)',
-      titles: ['CEO', 'Chief Executive Officer', 'Founder', 'Owner'],
-      seniorities: ['owner', 'founder', 'c_suite'],
     },
   ]
 }
 
-// ─── UI recommendation (for table display) ────────────────────────────────────
+// ─── Single role recommendation (for enrichment table display) ─────────────────
 
-/**
- * Returns a single recommended role label + reason for display in the table.
- * Based on the same size rules.
- */
 export function getRecommendedContactRole(
   employeeCount: string | null | undefined,
-  linkedinHirerName?: string | null,
-  reportingTo?: string | null,
-): ContactRecommendation {
-  // Concrete person already known from LinkedIn job post
-  if (linkedinHirerName) {
+  existingContactName: string | null | undefined,
+  reportingTo: string | null | undefined,
+): ContactRoleRecommendation {
+  if (existingContactName) {
     return {
-      role: 'Hiring Manager',
-      reason: `LinkedIn shows ${linkedinHirerName} is hiring`,
-      priority: 0,
-      searchTitles: [],
+      role: reportingTo ?? 'Contact found',
+      reason: 'Contact name already exists for this lead',
     }
   }
 
-  // Ad says who role reports to
-  if (reportingTo) {
-    return {
-      role: 'General Manager',
-      reason: `Reports to: ${reportingTo}`,
-      priority: 2,
-      searchTitles: ['General Manager', 'Director'],
-    }
-  }
+  const count = parseEmployeeCountStr(employeeCount)
 
-  const n = getMaxEmployeeCount(employeeCount)
-
-  if (n === 0) {
-    return {
-      role: 'HR Manager',
-      reason: 'Size unknown — HR Manager is safest starting point',
-      priority: 1,
-      searchTitles: ['HR Manager', 'General Manager', 'Director'],
-    }
-  }
-
-  if (n <= 5) {
-    return {
-      role: 'CEO',
-      reason: `Very small company (${employeeCount}) — CEO handles everything`,
-      priority: 8,
-      searchTitles: ['CEO', 'Founder', 'Owner', 'Managing Director'],
-    }
-  }
-
-  if (n < 100) {
-    return {
-      role: 'HR Manager',
-      reason: `Small company (${employeeCount}) — follow hierarchy: HR → GM → Director → CEO`,
-      priority: 1,
-      searchTitles: ['HR Manager', 'General Manager', 'Director'],
-    }
-  }
-
-  return {
-    role: 'HR Manager',
-    reason: `${employeeCount} employees — HR/P&C team manages hiring`,
-    priority: 1,
-    searchTitles: [
-      'HR Manager', 'People and Culture Manager',
-      'Talent Acquisition Manager', 'Head of HR',
-    ],
-  }
+  if (count === null) return { role: 'HR Manager / Owner', reason: 'Unknown size — starting with HR then Owner' }
+  if (count <= 10)    return { role: 'Owner / MD', reason: `Micro business (${count} emp) — owner makes all decisions` }
+  if (count <= 50)    return { role: 'HR Manager / Office Manager', reason: `Small company (${count} emp)` }
+  if (count <= 200)   return { role: 'HR / People & Culture Manager', reason: `Mid-size (${count} emp) — dedicated P&C team` }
+  return { role: 'Talent Acquisition / HR Manager', reason: `Larger company (${count} emp) — dedicated TA team` }
 }
 
-// ─── URL helpers ───────────────────────────────────────────────────────────────
-
-export function getLinkedInPeopleSearchUrl(
-  companyName: string,
-  contactRole: string,
-): string {
-  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${contactRole} ${companyName}`)}`
+function parseEmployeeCountStr(str: string | null | undefined): number | null {
+  if (!str) return null
+  const range = str.match(/(\d[\d,]*)\s*[-–]\s*(\d[\d,]*)/)
+  if (range) return parseInt(range[2].replace(/,/g, ''))
+  const plus = str.match(/(\d[\d,]*)\s*\+/)
+  if (plus) return parseInt(plus[1].replace(/,/g, ''))
+  const plain = str.replace(/[^0-9]/g, '')
+  return plain ? parseInt(plain) : null
 }
 
-export function getLinkedInCompanySearchUrl(companyName: string): string {
-  return `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(companyName)}`
+// ─── LinkedIn + Google search URLs (for manual research in table) ───────────────
+
+export function getLinkedInPeopleSearchUrl(companyName: string, role: string): string {
+  const keyword = role.split('/')[0].trim()
+  const q = encodeURIComponent(`${keyword} ${companyName}`)
+  return `https://www.linkedin.com/search/results/people/?keywords=${q}&origin=GLOBAL_SEARCH_HEADER`
 }
 
 export function getGoogleSearchUrl(companyName: string): string {
-  return `https://www.google.com/search?q=${encodeURIComponent(`${companyName} LinkedIn Australia`)}`
+  const q = encodeURIComponent(`"${companyName}" HR manager OR "people and culture" site:linkedin.com`)
+  return `https://www.google.com/search?q=${q}`
 }
