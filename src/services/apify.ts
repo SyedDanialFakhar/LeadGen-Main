@@ -65,7 +65,7 @@ function buildSeekSearchUrl(config: ScrapeConfig): string {
   }
 
   // Always sort by ListedDate so offset skipping is predictable
-  params.append('sortmode', 'ListedDate')
+  params.append('sortmode', 'KeywordRelevance')
 
   // ─── Date range logic ─────────────────────────────────────────────────────
   const minAgeDays = config.minAgeDays || 0
@@ -138,7 +138,7 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     'sales-other': true,
 
     workTypes: ['fulltime', 'parttime', 'contract'],
-    sortBy: 'ListedDate',
+    sortBy: 'KeywordRelevance',
     proxyConfiguration: { useApifyProxy: true },
   }
 
