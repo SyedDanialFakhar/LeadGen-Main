@@ -78,41 +78,39 @@ async function apolloRequest(
     )
   }
 
-  const url = `${BASE}${path}${options?.qs ? `?${options.qs}` : ''}`
+  // ✅ CHANGED: Call through Vercel proxy instead of directly to Apollo
+  const proxyUrl = '/api/apollo-proxy'
+  
+  console.log(`[Apollo] ${method} ${path} via proxy`)
 
-  console.log(`[Apollo] ${method} ${path}${options?.qs ? ` | qs: ${options.qs.slice(0, 80)}…` : ''}${options?.body ? ' | body: ' + JSON.stringify(options.body).slice(0, 80) : ''}`)
-
-  const res = await fetch(url, {
-    method,
+  const response = await fetch(proxyUrl, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache',
-      accept: 'application/json',
-      'x-api-key': key.trim(),
     },
-    ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
+    body: JSON.stringify({
+      path,
+      method,
+      qs: options?.qs,
+      body: options?.body,
+    }),
   })
 
-  console.log(`[Apollo] HTTP ${res.status} ← ${method} ${path}`)
-
-  if (res.ok) return res
-
-  let detail = ''
-  try {
-    const errData = await res.clone().json()
-    detail = errData.message || errData.error || JSON.stringify(errData)
-  } catch {
-    detail = await res.clone().text().catch(() => '')
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.error || `Proxy error: ${response.status}`)
   }
 
-  if (res.status === 401) throw new Error('Apollo 401: Invalid API key — check Settings.')
-  if (res.status === 403) throw new Error(
-    'Apollo 403: MASTER key required.\n' +
-    'Go to developer.apollo.io/#/keys → click your key → toggle "Set as master key" ON.',
-  )
-  if (res.status === 422) throw new Error(`Apollo 422: Invalid request — ${detail}`)
-  if (res.status === 429) throw new Error('Apollo 429: Rate limited — wait 60 seconds.')
-  throw new Error(`Apollo ${res.status}: ${detail || res.statusText}`)
+  const data = await response.json()
+  
+  // Return a Response-like object
+  return {
+    ok: response.status >= 200 && response.status < 300,
+    status: response.status,
+    json: async () => data,
+    text: async () => JSON.stringify(data),
+    clone: function() { return this as Response },
+  } as Response
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
