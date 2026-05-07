@@ -39,7 +39,7 @@ const getUserDisplayName = (user: any): string => {
     const emailUsername = user.email.split('@')[0]
     // Clean it up a bit
     return emailUsername.replace(/[._0-9]/g, ' ').split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ')
       .trim() || 'User'
   }

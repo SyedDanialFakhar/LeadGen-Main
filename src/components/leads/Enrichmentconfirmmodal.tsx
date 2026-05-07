@@ -45,6 +45,7 @@ const sourceLabel: Record<EnrichedCompanyData['source'], string> = {
   duckduckgo:      'DuckDuckGo',
   opencorporates:  'Open Corporates',
   google:          'Google Search',
+  website_scrape: 'Website Scrape',
   none:            'Not found',
 }
 
@@ -55,6 +56,7 @@ const sourceColour: Record<EnrichedCompanyData['source'], string> = {
   duckduckgo:      'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   opencorporates:  'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
   google:          'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  website_scrape: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
   none:            'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
 }
 

@@ -46,13 +46,15 @@ const statusConfig: Record<LeadStatus, { label: string; variant: BadgeProps['var
   'Email 1': { label: '📧 Email 1 Sent', variant: 'info' },
   'Email 2': { label: '📧 Email 2 Sent', variant: 'purple' },
   'Email 3': { label: '📧 Email 3 Sent', variant: 'success' },
-  // Keep old statuses for backward compatibility (in case any exist)
-  new: { label: 'New', variant: 'default' },
-  assessed: { label: 'Assessed', variant: 'info' },
-  called: { label: 'Called', variant: 'warning' },
-  converted: { label: 'Converted', variant: 'success', extra: 'font-semibold' },
-  closed: { label: 'Closed', variant: 'muted' },
-  deleted: { label: 'Deleted', variant: 'danger', extra: 'line-through opacity-60' },
+  'Closed': { label: 'Closed', variant: 'muted' },
+  'Sequence Closed': { label: 'Sequence Closed', variant: 'muted' },
+  // // Keep old statuses for backward compatibility (in case any exist)
+  // 'new': { label: 'New', variant: 'default' },
+  // assessed: { label: 'Assessed', variant: 'info' },
+  // called: { label: 'Called', variant: 'warning' },
+  // converted: { label: 'Converted', variant: 'success', extra: 'font-semibold' },
+  // closed: { label: 'Closed', variant: 'muted' },
+  // deleted: { label: 'Deleted', variant: 'danger', extra: 'line-through opacity-60' },
 }
 
 interface LeadStatusBadgeProps {
