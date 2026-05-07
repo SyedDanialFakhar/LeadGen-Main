@@ -11,6 +11,8 @@ interface UseAuthReturn {
   signIn: (email: string, password: string) => Promise<string | null>
   signUp: (email: string, password: string, name: string) => Promise<string | null>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<string | null>
+  updatePassword: (newPassword: string) => Promise<string | null>
 }
 
 export function useAuth(): UseAuthReturn {
@@ -67,13 +69,31 @@ export function useAuth(): UseAuthReturn {
         return error.message
       }
       
-      // If user was created successfully, you might want to add them to a profiles table
-      if (data.user) {
-        // Optional: Add user to a profiles table
-        // await supabase.from('profiles').insert({ id: data.user.id, name })
-      }
-      
       return null
+    },
+    []
+  )
+
+  const resetPassword = useCallback(
+    async (email: string): Promise<string | null> => {
+      setIsLoading(true)
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      setIsLoading(false)
+      return error ? error.message : null
+    },
+    []
+  )
+
+  const updatePassword = useCallback(
+    async (newPassword: string): Promise<string | null> => {
+      setIsLoading(true)
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+      setIsLoading(false)
+      return error ? error.message : null
     },
     []
   )
@@ -92,5 +112,7 @@ export function useAuth(): UseAuthReturn {
     signIn,
     signUp,
     signOut,
+    resetPassword,
+    updatePassword,
   }
 }

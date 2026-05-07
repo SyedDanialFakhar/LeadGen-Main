@@ -18,6 +18,8 @@ import { ScraperPage } from '@/pages/ScraperPage'
 import { EnrichmentPage } from '@/pages/EnrichmentPage'
 import { EmailPage } from '@/pages/EmailPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 
 export default function App() {
   return (
@@ -28,6 +30,8 @@ export default function App() {
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignUpPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Root redirect */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
