@@ -5,7 +5,6 @@ import { RefreshCw, Mail, Lock, AlertCircle, Eye, EyeOff, ArrowRight } from 'luc
 import { useAuth } from '@/hooks/useAuth'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { cn } from '@/utils/cn'
 
 export function LoginForm() {
   const { signIn } = useAuth()
@@ -15,7 +14,6 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,8 +40,8 @@ export function LoginForm() {
       <div className="w-full max-w-md">
         {/* Animated Background Decor */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl" />
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
 
         {/* Card */}
@@ -58,7 +56,7 @@ export function LoginForm() {
           <div className="flex flex-col items-center mb-8">
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
-              <div className="relative w-14 h-14 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-xl">
+              <div className="relative w-14 h-14 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-xl cursor-pointer group-hover:scale-105 transition-transform">
                 <RefreshCw className="w-7 h-7 text-white group-hover:rotate-180 transition-transform duration-500" />
                 <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               </div>
@@ -74,48 +72,20 @@ export function LoginForm() {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {/* Email Field with animated icon */}
-            <div className="group relative">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                Email address
-              </label>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'email' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : "text-slate-400"
-                )}>
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="charlie@company.com"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'email'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="email"
-                />
-              </div>
-            </div>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <Input
+              label="Email address"
+              type="email"
+              placeholder="charlie@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              leftIcon={<Mail className="w-4 h-4" />}
+              autoComplete="email"
+              disabled={isLoading}
+              error={error && !password ? error : undefined}
+            />
 
-            {/* Password Field with animated icon */}
-            <div className="group relative">
+            <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                   Password
@@ -127,49 +97,24 @@ export function LoginForm() {
                   Forgot password?
                 </Link>
               </div>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'password' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : "text-slate-400"
-                )}>
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="••••••••"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9 pr-10',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'password'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                leftIcon={<Lock className="w-4 h-4" />}
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
+                placeholder="••••••••"
+                disabled={isLoading}
+                autoComplete="current-password"
+              />
             </div>
 
             {/* Error */}
@@ -193,8 +138,10 @@ export function LoginForm() {
               className="w-full mt-2 group relative overflow-hidden"
               size="lg"
             >
-              <span className="relative z-10">Sign In</span>
-              <ArrowRight className="relative z-10 w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                Sign In
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </span>
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Button>
           </form>

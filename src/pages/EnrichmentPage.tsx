@@ -31,35 +31,36 @@ export function EnrichmentPage() {
 
   const selectedLeads = pendingLeads.filter(l => selectedIds.includes(l.id))
 
-  const handleContactFinderConfirm = (decisions: ContactDecision[]) => {
-    const accepted = decisions.filter(d => d.accept)
+  // src/pages/EnrichmentPage.tsx
 
-    for (const d of accepted) {
-      const updates: Partial<Lead> = {}
+const handleContactFinderConfirm = async (decisions: ContactDecision[]) => {
+  const accepted = decisions.filter(d => d.accept)
 
-      if (d.contactName)        updates.contactName        = d.contactName
-      if (d.contactTitle)       updates.contactJobTitle    = d.contactTitle
-      if (d.contactLinkedinUrl) updates.contactLinkedinUrl = d.contactLinkedinUrl
-      if (d.contactEmail)       updates.contactEmail       = d.contactEmail
-      // HQ phone from org enrichment — stored as company phone or contact phone
-      if (d.companyPhone)       updates.contactPhone       = d.companyPhone
-      if (d.companyLinkedinUrl) updates.companyLinkedinUrl = d.companyLinkedinUrl
-      if (d.companyWebsite)     updates.companyWebsite     = d.companyWebsite
-      if (d.industry)           updates.companyIndustry    = d.industry
-      if (d.employeeCount != null)
-        updates.companyEmployeeCount = String(d.employeeCount)
+  for (const d of accepted) {
+    const updates: Partial<Lead> = {}
 
-      // Only mark enriched when we found an email
-      if (d.contactEmail) updates.enrichmentStatus = 'enriched'
+    if (d.contactName)        updates.contactName        = d.contactName
+    if (d.contactTitle)       updates.contactJobTitle    = d.contactTitle
+    if (d.contactLinkedinUrl) updates.contactLinkedinUrl = d.contactLinkedinUrl
+    if (d.contactEmail)       updates.contactEmail       = d.contactEmail
+    if (d.companyPhone)       updates.contactPhone       = d.companyPhone
+    if (d.companyLinkedinUrl) updates.companyLinkedinUrl = d.companyLinkedinUrl
+    if (d.companyWebsite)     updates.companyWebsite     = d.companyWebsite
+    if (d.industry)           updates.companyIndustry    = d.industry
+    if (d.employeeCount != null)
+      updates.companyEmployeeCount = String(d.employeeCount)
 
-      if (Object.keys(updates).length > 0) {
-        updateLead({ id: d.leadId, updates })
-      }
+    if (d.contactEmail) updates.enrichmentStatus = 'enriched'
+
+    if (Object.keys(updates).length > 0) {
+      // ✅ CORRECT - passing object with id and updates
+      updateLead({ id: d.leadId, updates })
     }
-
-    setContactFinderOpen(false)
-    setSelectedIds([])
   }
+
+  setContactFinderOpen(false)
+  setSelectedIds([])
+}
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">

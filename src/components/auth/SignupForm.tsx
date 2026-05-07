@@ -1,4 +1,4 @@
-// src/components/auth/SignUpForm.tsx (key parts - the animated icon sections)
+// src/components/auth/SignUpForm.tsx
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { RefreshCw, Mail, Lock, User, AlertCircle, Eye, EyeOff, ArrowRight, CheckCircle } from 'lucide-react'
@@ -18,9 +18,8 @@ export function SignUpForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [focusedField, setFocusedField] = useState<string | null>(null)
 
-  // Password strength calculation (same as before)
+  // Password strength calculation
   const calculatePasswordStrength = (pass: string) => {
     let strength = 0
     if (pass.length >= 6) strength++
@@ -88,18 +87,23 @@ export function SignUpForm() {
       <div className="w-full max-w-md">
         {/* Animated Background Decor */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl" />
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
 
         {/* Card */}
-        <div className="relative backdrop-blur-sm bg-white/90 dark:bg-slate-900/90 border border-slate-200/50 dark:border-slate-800/50 rounded-2xl shadow-2xl p-6 md:p-8 transition-all duration-300 hover:shadow-blue-500/5">
-          
+        <div className="
+          relative backdrop-blur-sm
+          bg-white/90 dark:bg-slate-900/90
+          border border-slate-200/50 dark:border-slate-800/50
+          rounded-2xl shadow-2xl p-6 md:p-8
+          transition-all duration-300 hover:shadow-blue-500/5
+        ">
           {/* Logo */}
           <div className="flex flex-col items-center mb-6">
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
-              <div className="relative w-14 h-14 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-xl">
+              <div className="relative w-14 h-14 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-xl group-hover:scale-105 transition-transform">
                 <RefreshCw className="w-7 h-7 text-white group-hover:rotate-180 transition-transform duration-500" />
                 <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               </div>
@@ -116,128 +120,48 @@ export function SignUpForm() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {/* Full Name Field */}
-            <div className="relative">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                Full Name
-              </label>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'name' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : "text-slate-400"
-                )}>
-                  <User className="w-4 h-4" />
-                </div>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onFocus={() => setFocusedField('name')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Charlie Smith"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'name'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="name"
-                />
-              </div>
-            </div>
+            <Input
+              label="Full Name"
+              type="text"
+              placeholder="Charlie Smith"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              leftIcon={<User className="w-4 h-4" />}
+              autoComplete="name"
+              disabled={isLoading}
+            />
 
-            {/* Email Field */}
-            <div className="relative">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                Email address
-              </label>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'email' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : "text-slate-400"
-                )}>
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="charlie@company.com"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'email'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="email"
-                />
-              </div>
-            </div>
+            <Input
+              label="Email address"
+              type="email"
+              placeholder="charlie@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              leftIcon={<Mail className="w-4 h-4" />}
+              autoComplete="email"
+              disabled={isLoading}
+            />
 
-            {/* Password Field */}
-            <div className="relative">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'password' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : "text-slate-400"
-                )}>
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setFocusedField('password')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="••••••••"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9 pr-10',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'password'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+            <div>
+              <Input
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                leftIcon={<Lock className="w-4 h-4" />}
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
+                placeholder="••••••••"
+                disabled={isLoading}
+                autoComplete="new-password"
+              />
               
               {/* Password Strength Meter */}
               {password && (
@@ -260,78 +184,37 @@ export function SignUpForm() {
               )}
             </div>
 
-            {/* Confirm Password Field */}
-            <div className="relative">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <div className={cn(
-                  "absolute left-3 top-1/2 -translate-y-1/2 transition-all duration-200",
-                  focusedField === 'confirmPassword' 
-                    ? "text-blue-500 dark:text-blue-400 scale-110" 
-                    : doPasswordsMatch 
-                      ? "text-green-500" 
-                      : "text-slate-400"
-                )}>
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  onFocus={() => setFocusedField('confirmPassword')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="••••••••"
-                  className={cn(
-                    'w-full rounded-xl border text-sm px-3 py-2.5 pl-9 pr-10',
-                    'bg-white dark:bg-slate-800',
-                    'text-slate-900 dark:text-slate-100',
-                    'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-                    'transition-all duration-200',
-                    focusedField === 'confirmPassword'
-                      ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.02]'
-                      : doPasswordsMatch
-                        ? 'border-green-500'
-                        : doPasswordsNotMatch
-                        ? 'border-red-500'
-                        : 'border-slate-300 dark:border-slate-600',
-                    'focus:outline-none',
-                    isLoading && 'opacity-50 cursor-not-allowed'
-                  )}
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                />
+            <Input
+              label="Confirm Password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              leftIcon={<Lock className="w-4 h-4" />}
+              rightIcon={
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  className="focus:outline-none"
                 >
                   {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
-              </div>
-              
-              {/* Password Match Indicator */}
-              {confirmPassword && (
-                <div className="mt-1 flex items-center gap-1 text-xs">
-                  {doPasswordsMatch ? (
-                    <>
-                      <CheckCircle className="w-3 h-3 text-green-500" />
-                      <span className="text-green-600 dark:text-green-400">Passwords match</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="w-3 h-3 text-red-500" />
-                      <span className="text-red-600 dark:text-red-400">Passwords do not match</span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+              }
+              placeholder="••••••••"
+              disabled={isLoading}
+              error={doPasswordsNotMatch ? "Passwords do not match" : undefined}
+              helperText={doPasswordsMatch ? "✓ Passwords match" : undefined}
+            />
 
             {/* Error */}
             {error && (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm animate-shake">
+              <div className="
+                flex items-center gap-2 px-3 py-2.5 rounded-xl
+                bg-red-50 dark:bg-red-900/30
+                border border-red-200 dark:border-red-800
+                text-red-700 dark:text-red-400
+                text-sm
+                animate-shake
+              ">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {error}
               </div>
@@ -343,8 +226,10 @@ export function SignUpForm() {
               className="w-full mt-2 group relative overflow-hidden"
               size="lg"
             >
-              <span className="relative z-10">Create Account</span>
-              <ArrowRight className="relative z-10 w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                Create Account
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </span>
               <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Button>
           </form>
