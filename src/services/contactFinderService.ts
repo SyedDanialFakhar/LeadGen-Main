@@ -8,7 +8,10 @@
  *   Gets: org ID, LinkedIn employee count, domain, HQ phone, industry
  *
  * PHASE 2 – checking_size
- *   Skip if >500 employees (saves all remaining credits for this lead)
+ *   Skip if >1500 employees (saves all remaining credits for this lead)
+ *   NOTE: Seek employee counts are NOT trusted for early skipping — they are
+ *   often inaccurate (inflated or deflated). We always verify via Apollo/LinkedIn
+ *   first, then gate on the LinkedIn-verified count.
  *
  * PHASE 3 – finding_contact  [FREE — no credits]
  *   searchPeopleByTitles → priority groups by company size
@@ -33,7 +36,12 @@ import { findEmail } from './hunterApi'
 import { getTitleGroupsBySize } from '@/utils/contactPicker'
 import type { Lead } from '@/types'
 
-export const MAX_COMPANY_SIZE = 500
+/**
+ * Maximum LinkedIn-verified employee count we will process.
+ * Companies above this threshold are skipped AFTER Apollo confirms the count.
+ * Seek data is intentionally NOT used for this gate — it is frequently wrong.
+ */
+export const MAX_COMPANY_SIZE = 1500
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -90,11 +98,17 @@ export function estimateCredits(leads: Lead[]): { min: number; max: number; labe
   let min = 0, max = 0
 
   for (const lead of leads) {
+    // NOTE: We no longer skip based on Seek count here either — estimate conservatively.
+    // Only obvious extreme outliers (e.g. Seek says 50,000) are worth excluding from
+    // the estimate, but even then we verify via Apollo before actually skipping.
     const seekMax = parseEmpCount(lead.companyEmployeeCount)
-    if (seekMax !== null && seekMax > MAX_COMPANY_SIZE) continue
+    if (seekMax !== null && seekMax > MAX_COMPANY_SIZE * 5) {
+      // Only exclude from estimate if Seek says enormously over limit (likely correct)
+      continue
+    }
 
-    const hasDomain  = !!extractDomain(lead.companyWebsite)
-    const hasCount   = lead.companyEmployeeCount != null
+    const hasDomain   = !!extractDomain(lead.companyWebsite)
+    const hasCount    = lead.companyEmployeeCount != null
     const hasLinkedin = !!lead.companyLinkedinUrl
 
     // Org enrichment (skippable if domain + count + linkedin all present)
@@ -151,14 +165,18 @@ export async function findContactForLead(
   }
 
   try {
-    // ── EARLY SKIP: Seek says clearly too large ────────────────────────────
+    // ── NO EARLY SEEK-BASED SKIP ───────────────────────────────────────────
+    // Seek employee counts are frequently inaccurate — a company listed as
+    // "1,001–5,000" on Seek may actually have 800 employees on LinkedIn, or
+    // vice versa. We always resolve via Apollo/LinkedIn before deciding whether
+    // to skip. The only size gate is in Phase 2 using the LinkedIn-verified count.
+    //
+    // We log a note if Seek says very large, just for debugging transparency.
     if (seekCount !== null && seekCount > MAX_COMPANY_SIZE) {
-      console.log(`[CF] ⊗ Early skip — Seek says ${seekCount} employees`)
-      result.skipReason = `Seek says ${lead.companyEmployeeCount} employees — over ${MAX_COMPANY_SIZE} limit (credit saved)`
-      result.creditsSaved = 1
-      result.phase = 'skipped'
-      onProgress('skipped', { ...result })
-      return result
+      console.log(
+        `[CF] ℹ Seek reports ${seekCount} employees — above limit, but NOT skipping. ` +
+        `Will verify via Apollo/LinkedIn first (Seek data is often inaccurate).`,
+      )
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -183,27 +201,45 @@ export async function findContactForLead(
       `[CF] Company resolved via "${company.source}" | emp=${result.employeeCount}` +
       ` | domain=${result.companyDomain} | phone=${result.companyPhone ?? 'none'}`,
     )
+
+    // Log if LinkedIn count differs significantly from Seek
+    if (
+      seekCount !== null &&
+      result.employeeCount !== null &&
+      Math.abs(seekCount - result.employeeCount) > 50
+    ) {
+      console.log(
+        `[CF] ⚠ Count mismatch: Seek=${seekCount} vs LinkedIn/Apollo=${result.employeeCount}. ` +
+        `Using LinkedIn count as source of truth.`,
+      )
+    }
+
     report('finding_company')
 
     // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 2: SIZE GATE
+    // PHASE 2: SIZE GATE — LinkedIn-verified count only
     // ═══════════════════════════════════════════════════════════════════════
     report('checking_size')
-    console.log(`[CF] Phase 2: Size check — ${result.employeeCount ?? 'unknown'} employees`)
+    console.log(`[CF] Phase 2: Size check — ${result.employeeCount ?? 'unknown'} employees (LinkedIn/Apollo)`)
 
     if (result.employeeCount !== null && result.employeeCount > MAX_COMPANY_SIZE) {
-      const seekNote = seekCount !== null && seekCount !== result.employeeCount
-        ? ` (Seek said ${lead.companyEmployeeCount} — LinkedIn data is more accurate)`
-        : ''
+      // Include a note if Seek said something different (useful context for the user)
+      let seekNote = ''
+      if (seekCount !== null && seekCount !== result.employeeCount) {
+        seekNote = seekCount <= MAX_COMPANY_SIZE
+          ? ` (Seek showed ${lead.companyEmployeeCount} — LinkedIn count is more accurate)`
+          : ` (Seek also showed ${lead.companyEmployeeCount})`
+      }
+
       result.skipReason =
         `${lead.companyName} has ${result.employeeCount.toLocaleString()} employees ` +
-        `on LinkedIn${seekNote}. Limit is ${MAX_COMPANY_SIZE}.`
+        `on LinkedIn${seekNote}. Limit is ${MAX_COMPANY_SIZE.toLocaleString()}.`
       result.phase = 'skipped'
       onProgress('skipped', { ...result })
       return result
     }
 
-    console.log(`[CF] ✓ Size OK (${result.employeeCount ?? 'unknown'} employees)`)
+    console.log(`[CF] ✓ Size OK — ${result.employeeCount ?? 'unknown'} employees ≤ ${MAX_COMPANY_SIZE.toLocaleString()}`)
 
     // ═══════════════════════════════════════════════════════════════════════
     // PHASE 3: FIND CONTACT — FREE (no credits)
