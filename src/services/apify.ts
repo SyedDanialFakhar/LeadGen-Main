@@ -108,50 +108,50 @@ function buildSeekSearchUrl(config: ScrapeConfig): string {
  * so we don't need extra logic here.
  */
 export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
-  const token = await getApifyToken()
-  if (!token) {
-    throw new Error('Apify token not configured. Please add it in Settings.')
-  }
-
-  const searchUrl = buildSeekSearchUrl(config)
-  const maxResults = config.maxResults || 20
-
-  // Convert skip-pages count → item offset
-  const skipPages   = config.offset || 0
-  const offsetCount = skipPages * SEEK_JOBS_PER_PAGE
-
-  const input: Record<string, unknown> = {
-    searchUrl,
-    maxResults,
-
-    // Skip N items (pages × 20) to reach older listings
-    ...(offsetCount > 0 ? { offset: offsetCount } : {}),
-
-    // ✅ Sales sub-classification flags (confirmed — all results are Sales)
-    'sales': true,
-    'sales-account-relationship-management': true,
-    'sales-management': true,
-    'new-business-development': true,
-    'sales-representatives-consultants': true,
-    'sales-coordinators': true,
-    'sales-analysis-reporting': true,
-    'sales-other': true,
-
-    workTypes: ['fulltime', 'parttime', 'contract'],
-    sortBy: 'KeywordRelevance',
-    proxyConfiguration: { useApifyProxy: true },
-  }
-
-  console.log('═══════════════════════════════════════════════════════')
-  console.log('📦 Apify Input:')
-  console.log(`   • URL:        ${searchUrl}`)
-  console.log(`   • maxResults: ${maxResults}`)
-  console.log(`   • offset:     ${offsetCount} (skip ${skipPages} pages × ${SEEK_JOBS_PER_PAGE} jobs)`)
-  console.log(`   • sortBy:     ListedDate`)
-  console.log(`   • 7+days:     ${config.filterOlderThan7Days ? 'YES (daterange=31 applied)' : 'NO'}`)
-  console.log('═══════════════════════════════════════════════════════')
-
   try {
+    const token = await getApifyToken()
+    if (!token) {
+      throw new Error('Apify token not configured. Please add it in Settings.')
+    }
+
+    const searchUrl = buildSeekSearchUrl(config)
+    const maxResults = config.maxResults || 20
+
+    // Convert skip-pages count → item offset
+    const skipPages   = config.offset || 0
+    const offsetCount = skipPages * SEEK_JOBS_PER_PAGE
+
+    const input: Record<string, unknown> = {
+      searchUrl,
+      maxResults,
+
+      // Skip N items (pages × 20) to reach older listings
+      ...(offsetCount > 0 ? { offset: offsetCount } : {}),
+
+      // ✅ Sales sub-classification flags (confirmed — all results are Sales)
+      'sales': true,
+      'sales-account-relationship-management': true,
+      'sales-management': true,
+      'new-business-development': true,
+      'sales-representatives-consultants': true,
+      'sales-coordinators': true,
+      'sales-analysis-reporting': true,
+      'sales-other': true,
+
+      workTypes: ['fulltime', 'parttime', 'contract'],
+      sortBy: 'KeywordRelevance',
+      proxyConfiguration: { useApifyProxy: true },
+    }
+
+    console.log('═══════════════════════════════════════════════════════')
+    console.log('📦 Apify Input:')
+    console.log(`   • URL:        ${searchUrl}`)
+    console.log(`   • maxResults: ${maxResults}`)
+    console.log(`   • offset:     ${offsetCount} (skip ${skipPages} pages × ${SEEK_JOBS_PER_PAGE} jobs)`)
+    console.log(`   • sortBy:     KeywordRelevance`)
+    console.log(`   • 7+days:     ${config.filterOlderThan7Days ? 'YES (daterange=31 applied)' : 'NO'}`)
+    console.log('═══════════════════════════════════════════════════════')
+
     const response = await fetch(
       `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,
       {
@@ -167,22 +167,57 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('❌ Apify API error:', errorText)
-      let errorMessage = `Apify run failed: ${response.status}`
+      console.error('❌ Response status:', response.status)
+      console.error('❌ Response statusText:', response.statusText)
+      
+      let errorMessage = `Apify API request failed (${response.status})`
+      
       try {
         const errorJson = JSON.parse(errorText)
-        if (errorJson.error?.message) errorMessage = `Apify error: ${errorJson.error.message}`
-      } catch { /* use default */ }
+        if (errorJson.error?.message) {
+          errorMessage = `Apify error: ${errorJson.error.message}`
+        } else if (errorJson.message) {
+          errorMessage = `Apify error: ${errorJson.message}`
+        }
+      } catch (parseError) {
+        // Not JSON, use the text if it's short enough
+        if (errorText && errorText.length < 200) {
+          errorMessage = `Apify error: ${errorText}`
+        }
+      }
+      
       throw new Error(errorMessage)
     }
 
     const result = await response.json()
-    const runId  = result.data.id
+    
+    if (!result.data || !result.data.id) {
+      console.error('❌ Unexpected Apify response:', result)
+      throw new Error('Apify returned invalid response: missing run ID')
+    }
+    
+    const runId = result.data.id
     console.log(`✅ Apify run started: ${runId}`)
     return runId
 
   } catch (error) {
     console.error('❌ Failed to start Apify run:', error)
-    throw error
+    console.error('❌ Error type:', typeof error)
+    console.error('❌ Error details:', error)
+    
+    // Ensure we always throw a proper Error with a message
+    if (error instanceof Error) {
+      throw error
+    }
+    
+    // If it's not an Error instance, create one
+    const errorMessage = typeof error === 'string' 
+      ? error 
+      : error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : 'Failed to start Apify scraper'
+    
+    throw new Error(errorMessage)
   }
 }
 
@@ -190,55 +225,75 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
  * Poll run status
  */
 export async function pollRunStatus(runId: string): Promise<'running' | 'succeeded' | 'failed'> {
-  const token = await getApifyToken()
-  if (!token) throw new Error('Apify token not configured')
+  try {
+    const token = await getApifyToken()
+    if (!token) throw new Error('Apify token not configured')
 
-  const response = await fetch(
-    `${APIFY_BASE}/actor-runs/${runId}`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  )
+    const response = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    )
 
-  if (!response.ok) throw new Error(`Failed to poll run status: ${response.status}`)
+    if (!response.ok) {
+      throw new Error(`Failed to poll run status: ${response.status} ${response.statusText}`)
+    }
 
-  const result = await response.json()
-  const status = result.data.status
+    const result = await response.json()
+    const status = result.data.status
 
-  if (status === 'SUCCEEDED') return 'succeeded'
-  if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') return 'failed'
-  return 'running'
+    if (status === 'SUCCEEDED') return 'succeeded'
+    if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') return 'failed'
+    return 'running'
+    
+  } catch (error) {
+    console.error('❌ Failed to poll run status:', error)
+    if (error instanceof Error) throw error
+    throw new Error(`Failed to poll run status: ${String(error)}`)
+  }
 }
 
 /**
  * Fetch run results from dataset
  */
 export async function fetchRunResults(runId: string, limit?: number): Promise<RawSeekJob[]> {
-  const token = await getApifyToken()
-  if (!token) throw new Error('Apify token not configured')
+  try {
+    const token = await getApifyToken()
+    if (!token) throw new Error('Apify token not configured')
 
-  const runResponse = await fetch(
-    `${APIFY_BASE}/actor-runs/${runId}`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  )
+    const runResponse = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    )
 
-  if (!runResponse.ok) throw new Error(`Failed to get run details: ${runResponse.status}`)
+    if (!runResponse.ok) {
+      throw new Error(`Failed to get run details: ${runResponse.status} ${runResponse.statusText}`)
+    }
 
-  const runData    = await runResponse.json()
-  const datasetId  = runData.data.defaultDatasetId
+    const runData = await runResponse.json()
+    const datasetId = runData.data.defaultDatasetId
 
-  if (!datasetId) throw new Error('No dataset found for this run')
+    if (!datasetId) throw new Error('No dataset found for this run')
 
-  const actualLimit = limit || 50
-  const response    = await fetch(
-    `${APIFY_BASE}/datasets/${datasetId}/items?limit=${actualLimit}`,
-    { headers: { 'Authorization': `Bearer ${token}` } }
-  )
+    const actualLimit = limit || 50
+    const response = await fetch(
+      `${APIFY_BASE}/datasets/${datasetId}/items?limit=${actualLimit}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    )
 
-  if (!response.ok) throw new Error(`Failed to fetch run results: ${response.status}`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch run results: ${response.status} ${response.statusText}`)
+    }
 
-  const data = await response.json()
-  console.log(`✅ Fetched ${data.length} jobs from Apify`)
+    const data = await response.json()
+    console.log(`✅ Fetched ${data.length} jobs from Apify`)
 
-  return data.length > actualLimit ? data.slice(0, actualLimit) : data
+    return data.length > actualLimit ? data.slice(0, actualLimit) : data
+    
+  } catch (error) {
+    console.error('❌ Failed to fetch run results:', error)
+    if (error instanceof Error) throw error
+    throw new Error(`Failed to fetch results: ${String(error)}`)
+  }
 }
 
 /**
@@ -249,25 +304,38 @@ export async function waitForRun(
   onProgress?: (status: string) => void,
   timeoutMs = 180000
 ): Promise<'succeeded' | 'failed'> {
-  const start        = Date.now()
-  let   pollCount    = 0
+  const start = Date.now()
+  let pollCount = 0
   const pollInterval = 3000
 
-  while (Date.now() - start < timeoutMs) {
-    pollCount++
-    const status  = await pollRunStatus(runId)
-    onProgress?.(status)
-    const elapsed = Math.floor((Date.now() - start) / 1000)
+  try {
+    while (Date.now() - start < timeoutMs) {
+      pollCount++
+      const status = await pollRunStatus(runId)
+      onProgress?.(status)
+      const elapsed = Math.floor((Date.now() - start) / 1000)
 
-    if (pollCount % 5 === 0) {
-      console.log(`🔄 Poll ${pollCount}: ${status} (${elapsed}s elapsed)`)
+      if (pollCount % 5 === 0) {
+        console.log(`🔄 Poll ${pollCount}: ${status} (${elapsed}s elapsed)`)
+      }
+
+      if (status === 'succeeded') {
+        console.log(`✅ Run completed in ${elapsed}s`)
+        return 'succeeded'
+      }
+      if (status === 'failed') {
+        console.log(`❌ Run failed after ${elapsed}s`)
+        return 'failed'
+      }
+
+      await new Promise((res) => setTimeout(res, pollInterval))
     }
 
-    if (status === 'succeeded') { console.log(`✅ Run completed in ${elapsed}s`); return 'succeeded' }
-    if (status === 'failed')    { console.log(`❌ Run failed after ${elapsed}s`);  return 'failed'    }
-
-    await new Promise((res) => setTimeout(res, pollInterval))
+    throw new Error(`Run timed out after ${Math.floor(timeoutMs / 1000)}s`)
+    
+  } catch (error) {
+    console.error('❌ Error waiting for run:', error)
+    if (error instanceof Error) throw error
+    throw new Error(`Error waiting for run: ${String(error)}`)
   }
-
-  throw new Error(`Run timed out after ${Math.floor(timeoutMs / 1000)}s`)
 }
