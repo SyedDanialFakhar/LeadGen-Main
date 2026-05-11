@@ -33,7 +33,13 @@
 import type { RawSeekJob, ScrapeConfig } from '@/types'
 import { getApifyToken } from './settingsService'
 
-const APIFY_BASE = '/api/apify/v2'
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || 
+   window.location.hostname === '127.0.0.1')
+
+   const APIFY_BASE = isLocalhost 
+   ? 'https://api.apify.com/v2'      // Direct call on localhost
+   : '/api/apify-proxy'               // Proxy on Vercel
 const SEEK_ACTOR_ID = 'websift~seek-job-scraper'
 const SEEK_SALES_CLASSIFICATION_ID = '1201'
 
@@ -152,17 +158,45 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     console.log(`   • 7+days:     ${config.filterOlderThan7Days ? 'YES (daterange=31 applied)' : 'NO'}`)
     console.log('═══════════════════════════════════════════════════════')
 
-    const response = await fetch(
-      `${APIFY_BASE}/acts/${SEEK_ACTOR_ID}/runs`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(input),
-      }
-    )
+    // ✅ Detect if we're on localhost or Vercel
+    const isLocalhost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || 
+       window.location.hostname === '127.0.0.1')
+
+    let response: Response
+
+    if (isLocalhost) {
+      // LOCALHOST: Direct API call with token in header
+      console.log('📍 Running on localhost - using direct Apify API')
+      response = await fetch(
+        'https://api.apify.com/v2/acts/websift~seek-job-scraper/runs',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(input),
+        }
+      )
+    } else {
+      // VERCEL: Use proxy (token on server, not sent from browser)
+      console.log('☁️ Running on Vercel - using proxy')
+      response = await fetch(
+        '/api/apify-proxy',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            path: '/acts/websift~seek-job-scraper/runs',
+            method: 'POST',
+            body: input,
+          }),
+        }
+      )
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -191,12 +225,13 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
 
     const result = await response.json()
     
-    if (!result.data || !result.data.id) {
+    // Handle both direct API and proxy response formats
+    const runId = result.data?.id || result.id
+    if (!runId) {
       console.error('❌ Unexpected Apify response:', result)
       throw new Error('Apify returned invalid response: missing run ID')
     }
     
-    const runId = result.data.id
     console.log(`✅ Apify run started: ${runId}`)
     return runId
 
@@ -220,7 +255,6 @@ export async function runSeekScraper(config: ScrapeConfig): Promise<string> {
     throw new Error(errorMessage)
   }
 }
-
 /**
  * Poll run status
  */
