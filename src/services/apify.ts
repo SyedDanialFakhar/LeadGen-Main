@@ -263,10 +263,32 @@ export async function pollRunStatus(runId: string): Promise<'running' | 'succeed
     const token = await getApifyToken()
     if (!token) throw new Error('Apify token not configured')
 
-    const response = await fetch(
-      `${APIFY_BASE}/actor-runs/${runId}`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    )
+    // Detect environment
+    const isLocalhost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || 
+       window.location.hostname === '127.0.0.1')
+
+    let response: Response
+
+    if (isLocalhost) {
+      // LOCALHOST: Direct API call
+      response = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      )
+    } else {
+      // VERCEL: Use proxy
+      response = await fetch('/api/apify-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: `/actor-runs/${runId}`,
+          method: 'GET',
+        }),
+      })
+    }
 
     if (!response.ok) {
       throw new Error(`Failed to poll run status: ${response.status} ${response.statusText}`)
@@ -294,10 +316,32 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
     const token = await getApifyToken()
     if (!token) throw new Error('Apify token not configured')
 
-    const runResponse = await fetch(
-      `${APIFY_BASE}/actor-runs/${runId}`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    )
+    // Detect environment
+    const isLocalhost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || 
+       window.location.hostname === '127.0.0.1')
+
+    let runResponse: Response
+
+    if (isLocalhost) {
+      // LOCALHOST: Direct API call to get run details
+      runResponse = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      )
+    } else {
+      // VERCEL: Use proxy to get run details
+      runResponse = await fetch('/api/apify-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: `/actor-runs/${runId}`,
+          method: 'GET',
+        }),
+      })
+    }
 
     if (!runResponse.ok) {
       throw new Error(`Failed to get run details: ${runResponse.status} ${runResponse.statusText}`)
@@ -309,10 +353,27 @@ export async function fetchRunResults(runId: string, limit?: number): Promise<Ra
     if (!datasetId) throw new Error('No dataset found for this run')
 
     const actualLimit = limit || 50
-    const response = await fetch(
-      `${APIFY_BASE}/datasets/${datasetId}/items?limit=${actualLimit}`,
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    )
+    let response: Response
+
+    if (isLocalhost) {
+      // LOCALHOST: Direct API call to fetch dataset items
+      response = await fetch(
+        `https://api.apify.com/v2/datasets/${datasetId}/items?limit=${actualLimit}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      )
+    } else {
+      // VERCEL: Use proxy to fetch dataset items
+      response = await fetch('/api/apify-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: `/datasets/${datasetId}/items?limit=${actualLimit}`,
+          method: 'GET',
+        }),
+      })
+    }
 
     if (!response.ok) {
       throw new Error(`Failed to fetch run results: ${response.status} ${response.statusText}`)
